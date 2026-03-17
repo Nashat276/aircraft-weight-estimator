@@ -4,150 +4,152 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from fpdf import FPDF
-import io
 
-# --- 1. UI & Branding ---
-st.set_page_config(page_title="AeroSystems Analysis Suite", layout="wide")
-
+# --- 1. الهوية البصرية (Professional Design) ---
+st.set_page_config(page_title="Aircraft Design Analysis - JUST Edition", layout="wide")
 st.markdown("""
     <style>
-    .main { background-color: #FFFFFF; }
-    .stMetric { border: 1px solid #E5E7EB; background-color: #F9FAFB; border-radius: 4px; padding: 10px; }
-    h1, h2, h3 { color: #1E3A8A; font-family: 'Arial', sans-serif; }
+    .report-box { border: 1px solid #E0E0E0; padding: 20px; border-radius: 5px; background-color: #FFFFFF; }
+    .metric-label { font-weight: bold; color: #1E3A8A; }
+    h1, h2, h3 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📊 Aircraft Design & Sensitivity Control Center")
-st.caption("Professional Engineering Dashboard | Manual WTO Control Mode")
+st.title("✈️ Conceptual Aircraft Design & Sensitivity Analysis")
+st.info("هذا البرنامج يتبع تسلسل الحسابات في ملف Homework 1 & 2 خطوة بخطوة.")
 
-# --- 2. Input Data Sheet ---
-st.sidebar.header("📋 Input Specifications")
-with st.sidebar.expander("Mission & Payload", expanded=True):
+# --- 2. مدخلات التصميم (المعطيات - Page 1) ---
+st.header("1️⃣ Design Inputs (المعطيات)")
+col_in1, col_in2, col_in3 = st.columns(3)
+
+with col_in1:
+    st.subheader("Payload & Crew")
+    pax = st.number_input("Number of Passengers", value=34)
+    w_pax_unit = 205 # 175 + 30 baggage
+    w_pl = pax * w_pax_unit
+    w_crew = st.number_input("Crew Weight (Wcrew)", value=615.0)
+    st.caption(f"Total D (Fixed Weight): {w_pl + w_crew} lbs")
+
+with col_in2:
+    st.subheader("Mission Profile")
     rc = st.number_input("Range (Rc) - miles", value=1265.8)
-    pax = st.number_input("Passengers", value=34)
-    w_pl = pax * 205
-    w_crew = st.number_input("Crew Weight (lbs)", value=615.0)
+    eltr = st.number_input("Endurance (E) - hrs", value=0.75)
+    m_res = st.number_input("Reserve Ratio (Mres)", value=0.05)
+    m_tfo = st.number_input("TFO Ratio (Mtfo)", value=0.005)
 
-with st.sidebar.expander("Aerodynamic Ratios", expanded=True):
+with col_in3:
+    st.subheader("Performance Specs")
     ld_c = st.number_input("L/D Cruise", value=13.0)
     cp_c = st.number_input("Cp Cruise", value=0.6)
-    np_c = st.number_input("Prop Efficiency (ηp)", value=0.85)
-    m_res = st.number_input("Mres (Reserves)", value=0.05)
-    m_tfo = st.number_input("Mtfo (Trapped Fuel)", value=0.005)
+    np_c = st.number_input("ηp Cruise", value=0.85)
 
-# --- 3. Variable WTO Input (The Driver) ---
-st.subheader("⚙️ Control Panel: Gross Weight Adjustment")
+# --- 3. المتغير الأساسي (Control Section) ---
+st.header("2️⃣ Gross Weight Control (Variable WTO)")
+st.write("قم بتغيير الوزن الإجمالي لرؤية أثره على الحسابات (كما في الجدول اليدوي):")
 wto_input = st.number_input("Set Take-off Weight (WTO) - lbs", value=48550.0, step=100.0)
 
-# --- 4. Engineering Logic Engine ---
-def run_analysis(wto):
-    coeff_a, coeff_b = 0.3774, 0.9647
-    
-    # 1. Fuel Fractions (Step-by-step)
-    f_start_climb = 0.990 * 0.995 * 0.995 * 0.985
+# --- 4. محرك الحسابات (Step-by-Step Logic) ---
+def calculate_mission(wto):
+    # المرحلة 1: حساب كسر الوقود (Mff)
+    f_fixed = 0.990 * 0.995 * 0.995 * 0.985
     f_cruise = 1 / math.exp(rc / (375 * (np_c / cp_c) * ld_c))
-    f_loiter = 0.970 
-    f_des_land = 0.985 * 0.995
-    mff = f_start_climb * f_cruise * f_loiter * f_des_land
+    f_loiter = 0.970 # القيمة المعتمدة في ملفك
+    f_land = 0.985 * 0.995
+    mff = f_fixed * f_cruise * f_loiter * f_land
     
-    # 2. Factor C & D (Eq 2.22)
+    # المرحلة 2: حساب المعاملات (C and D) - Eq 2.22
     c_val = 1 - (1 + m_res) * (1 - mff) - m_tfo
     d_val = w_pl + w_crew
     
-    # 3. Weight Matching
+    # المرحلة 3: مقارنة الأوزان (Matching)
     wf = wto * (1 - mff)
-    we_calc = wto - wf - d_val - (m_tfo * wto)
-    we_allow = 10**((math.log10(wto) - coeff_a) / coeff_b)
+    we_required = wto - wf - d_val - (m_tfo * wto)
+    # Allowable WE using Log10 (Step 6 in your file)
+    coeff_a, coeff_b = 0.3774, 0.9647
+    we_structural = 10**((math.log10(wto) - coeff_a) / coeff_b)
     
-    # 4. Sensitivity F (Eq 2.44)
+    # المرحلة 4: معامل الحساسية (F) - Eq 2.44
     num_f = -coeff_b * (wto**2) * (1 + m_res) * mff
     den_f = (c_val * wto * (1 - coeff_b)) - d_val
     f_factor = num_f / den_f if den_f != 0 else 0
     
-    # 5. Derivatives (Eq 2.49 - 2.51)
+    # المرحلة 5: مشتقات الحساسية (Sensitivity) - Page 2
     dw_dr = (f_factor * cp_c) / (375 * np_c * ld_c)
     dw_dcp = (f_factor * rc) / (375 * np_c * ld_c)
     
     return locals()
 
-data = run_analysis(wto_input)
+res = calculate_mission(wto_input)
 
-# --- 5. Dashboard Output ---
-col1, col2 = st.columns([1, 2])
+# --- 5. عرض النتائج بترتيب الملف (Output Display) ---
+st.header("3️⃣ Results & Verification (النتائج والتحقق)")
+col_res1, col_res2 = st.columns(2)
 
-with col1:
-    st.subheader("🔢 Computed Results")
-    st.metric("Factor C", f"{data['c_val']:.4f}")
-    st.metric("Sensitivity Factor (F)", f"{data['f_factor']:,.0f}")
-    st.write("---")
-    st.write(f"**Calculated WE:** {data['we_calc']:,.1f} lb")
-    st.write(f"**Allowable WE:** {data['we_allow']:,.1f} lb")
-    error = data['we_calc'] - data['we_allow']
-    st.write(f"**Matching Error:** {error:,.1f} lb")
+with col_res1:
+    st.markdown("**Intermediate Factors:**")
+    st.write(f"Fuel Fraction (Mff): `{res['mff']:.4f}`")
+    st.write(f"C Factor (Efficiency): `{res['c_val']:.4f}`")
+    st.write(f"Sensitivity F Factor: `{res['f_factor']:,.2f}`")
 
-with col2:
-    # High-End Excel Style Plot
-    w_axis = np.linspace(30000, 80000, 100)
-    sweep = [run_analysis(w) for w in w_axis]
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=w_axis, y=[x['we_calc'] for x in sweep], name='Tentative WE (Required)', line=dict(color='#1E3A8A', width=3)))
-    fig.add_trace(go.Scatter(x=w_axis, y=[x['we_allow'] for x in sweep], name='Allowable WE (Structural)', line=dict(color='#DC2626', width=3)))
-    fig.add_vline(x=wto_input, line_dash="dot", line_color="#4B5563", annotation_text="Selected WTO")
-    fig.update_layout(title="Weight Equilibrium Chart", xaxis_title="WTO (lbs)", yaxis_title="Empty Weight (lbs)", plot_bgcolor='white')
-    fig.update_xaxes(showgrid=True, gridcolor='#F3F4F6')
-    fig.update_yaxes(showgrid=True, gridcolor='#F3F4F6')
-    st.plotly_chart(fig, use_container_width=True)
+with col_res2:
+    st.markdown("**Weight Matching (The Balance):**")
+    st.write(f"Required WE (from Mission): `{res['we_required']:,.1f} lbs`")
+    st.write(f"Allowable WE (from Structure): `{res['we_structural']:,.1f} lbs`")
+    diff = res['we_required'] - res['we_structural']
+    st.warning(f"Difference (Error): {diff:,.1f} lbs")
 
-# --- 6. The "Why & How" PDF Generator (Fixed Encoding) ---
-def generate_pdf():
-    # استخدام 'latin-1' وتجنب الرموز الغريبة لحل مشكلة Unicode
+# --- 6. الرسوم البيانية (Excel-Style Charts) ---
+st.header("4️⃣ Graphical Analysis (العلاقات الهندسية)")
+
+w_range = np.linspace(30000, 80000, 50)
+sweep = [calculate_mission(w) for w in w_range]
+
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=w_range, y=[x['we_required'] for x in sweep], name='Required WE', line=dict(color='blue', width=2)))
+fig.add_trace(go.Scatter(x=w_range, y=[x['we_structural'] for x in sweep], name='Allowable WE', line=dict(color='red', width=2)))
+fig.add_vline(x=wto_input, line_dash="dash", line_color="black", annotation_text="Your WTO")
+fig.update_layout(title="Finding the Equilibrium Point (Intersection)", xaxis_title="Gross Weight (WTO)", yaxis_title="Empty Weight (WE)", plot_bgcolor='white')
+st.plotly_chart(fig, use_container_width=True)
+
+# --- 7. تحليل الحساسية (Page 2) ---
+st.header("5️⃣ Sensitivity Analysis (تحليل الحساسية)")
+st.write("هذه الأرقام توضح كيف سيتغير وزن الطائرة الإجمالي إذا تغيرت مدخلات التصميم:")
+col_s1, col_s2 = st.columns(2)
+col_s1.info(f"**∂WTO / ∂Range (dW/dR):** {res['dw_dr']:.2f} lbs/mile")
+col_s2.info(f"**∂WTO / ∂Cp (dW/dCp):** {res['dw_dcp']:.2f} lbs/unit")
+
+# --- 8. التقرير المفصل (PDF Explanation) ---
+def generate_detailed_pdf():
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, "Aeronautical Design & Sensitivity Report", ln=True, align='C')
+    pdf.cell(0, 10, "Engineering Report: Aircraft Design & Sensitivity", ln=True, align='C')
     pdf.ln(10)
     
-    # Explanation Section
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "1. Design Methodology (Why we do this?)", ln=True)
+    pdf.cell(0, 10, "1. Objective and Process", ln=True)
     pdf.set_font("Arial", '', 11)
-    msg = (
-        "In conceptual design, we must match the aircraft's 'Structural Capability' "
-        "(Allowable WE) with its 'Mission Requirement' (Calculated WE). "
-        "The Selected WTO is the driver for all these calculations."
+    process = (
+        "This study aims to find the equilibrium Take-off Weight (WTO). "
+        "We use a variable WTO to calculate the fuel needed for the mission. "
+        "The intersection of Required Weight and Allowable Structural Weight gives us the feasible design point."
     )
-    pdf.multi_cell(0, 7, msg)
-    pdf.ln(5)
+    pdf.multi_cell(0, 7, process)
     
+    pdf.ln(5)
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "2. Sensitivity Analysis (The meaning of F)", ln=True)
+    pdf.cell(0, 10, "2. Sensitivity Logic (Factor F)", ln=True)
     pdf.set_font("Arial", '', 11)
-    f_msg = (
-        f"Sensitivity Factor F ({data['f_factor']:,.0f}) represents the growth factor. "
-        "A high F value indicates that any weight added to the payload or structure "
-        "will cause a massive spiral increase in the total Gross Weight."
+    f_logic = (
+        f"The Sensitivity Factor F ({res['f_factor']:,.2f}) is the growth multiplier. "
+        "It indicates that for every unit of weight added, the total aircraft grows by this factor "
+        "due to the additional fuel and wing area needed to lift it."
     )
-    pdf.multi_cell(0, 7, f_msg)
-    pdf.ln(5)
+    pdf.multi_cell(0, 7, f_logic)
     
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "3. Key Numerical Outputs", ln=True)
-    pdf.set_font("Arial", '', 11)
-    pdf.cell(0, 8, f"- Selected Take-off Weight: {wto_input:,.2f} lbs", ln=True)
-    pdf.cell(0, 8, f"- C Factor (Efficiency): {data['c_val']:.4f}", ln=True)
-    pdf.cell(0, 8, f"- Weight impact per mile (dWTO/dR): {data['dw_dr']:.2f} lbs/mi", ln=True)
-    
-    # استخراج البيانات كـ bytes بطريقة متوافقة
     return pdf.output(dest='S').encode('latin-1', 'ignore')
 
 st.divider()
-st.subheader("📄 Engineering Report")
-st.write("Click below to generate a detailed PDF explaining the logic behind the C factor, F factor, and why the WTO must converge for a successful design.")
-
-btn = st.download_button(
-    label="📥 Download Detailed PDF Report",
-    data=generate_detailed_pdf() if 'generate_detailed_pdf' in locals() else generate_pdf(),
-    file_name="Aircraft_Technical_Analysis.pdf",
-    mime="application/pdf"
-)
+st.download_button("📥 Download Comprehensive Engineering Report (PDF)", 
+                   data=generate_detailed_pdf(), 
+                   file_name="Aircraft_Technical_Analysis.pdf")
