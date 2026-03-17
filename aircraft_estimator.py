@@ -1,135 +1,93 @@
 import streamlit as st
 import math
+import numpy as np
+import pandas as pd
 
-# ------------------ Page Config ------------------
-st.set_page_config(page_title="Aircraft Design Tool", page_icon="✈️", layout="wide")
+# ------------------ Page ------------------
+st.set_page_config(page_title="Aircraft Cockpit", page_icon="✈️", layout="wide")
 
-st.title("✈️ Aircraft Preliminary Design Tool")
-st.markdown("### Automatic WTO + Sensitivity Analysis")
+# ------------------ Style ------------------
+st.markdown("""
+<style>
+body {background-color: #0b0f19;}
+.metric-card {
+    background: linear-gradient(145deg, #1c2333, #0f1424);
+    padding: 20px;
+    border-radius: 15px;
+    text-align: center;
+    box-shadow: 0 0 15px rgba(0,255,255,0.2);
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ------------------ Title ------------------
+st.title("✈️ Aircraft Cockpit Dashboard")
+st.markdown("### Real-Time Aircraft Design System")
 
 # ------------------ Sidebar ------------------
-st.sidebar.header("✏️ Inputs")
+st.sidebar.header("⚙️ Controls")
 
-# Payload
-passengers = st.sidebar.number_input("Passengers", value=34)
-passenger_weight = st.sidebar.number_input("Passenger Weight (lb)", value=175.0)
-baggage_weight = st.sidebar.number_input("Baggage (lb)", value=30.0)
-
-# Crew
-crew_weight = st.sidebar.number_input("Crew Weight (lb)", value=615.0)
-attendant_weight = st.sidebar.number_input("Attendant (lb)", value=242.75)
-
-# Cruise
-Rc = st.sidebar.number_input("Range (mile)", value=1265.847)
-LD_cruise = st.sidebar.number_input("L/D Cruise", value=13.0)
-Cp_cruise = st.sidebar.number_input("Cp Cruise", value=0.6)
-np_cruise = st.sidebar.number_input("ηp Cruise", value=0.85)
-
-# Loiter
-E_loiter = st.sidebar.number_input("Endurance (hr)", value=0.75)
-LD_loiter = st.sidebar.number_input("L/D Loiter", value=16.0)
-Cp_loiter = st.sidebar.number_input("Cp Loiter", value=0.65)
-np_loiter = st.sidebar.number_input("ηp Loiter", value=0.77)
-V_loiter = st.sidebar.number_input("Speed (mph)", value=287.69)
+passengers = st.sidebar.slider("Passengers", 0, 100, 34)
+Rc = st.sidebar.slider("Range (mile)", 100, 2000, 1265)
+LD = st.sidebar.slider("L/D", 5.0, 25.0, 13.0)
+Cp = st.sidebar.slider("Cp", 0.3, 1.0, 0.6)
+np_eff = st.sidebar.slider("Efficiency", 0.5, 1.0, 0.85)
 
 # Constants
 A = 0.3774
 B = 0.9647
-Mtfo = 0.005
-Mres = 0
+crew = 615
+att = 242.75
+payload = passengers * (175 + 30)
 
-# ------------------ Button ------------------
-if st.button("🚀 Run Analysis"):
+# ------------------ Calculate ------------------
+if st.button("🚀 Run Simulation"):
 
-    # Payload
-    Wpl = passengers * (passenger_weight + baggage_weight)
+    # Fuel fraction
+    W5_W4 = 1 / math.exp(Rc / (375 * (np_eff / Cp) * LD))
+    Mff = 0.99*0.995*0.995*0.985*W5_W4*0.97*0.985*0.995
 
-    # ------------------ Mission Fractions ------------------
-    W1_W0 = 0.99
-    W2_W1 = 0.995
-    W3_W2 = 0.995
-    W4_W3 = 0.985
-
-    W5_W4 = 1 / math.exp(Rc / (375 * (np_cruise / Cp_cruise) * LD_cruise))
-    W6_W5 = 1 / math.exp(E_loiter / (375 * (1 / V_loiter) * (np_loiter / Cp_loiter) * LD_loiter))
-
-    W7_W6 = 0.985
-    W8_W7 = 0.995
-
-    Mff = W1_W0*W2_W1*W3_W2*W4_W3*W5_W4*W6_W5*W7_W6*W8_W7
-
-    # ------------------ Solve WTO Automatically ------------------
-    WTO = 50000  # initial guess
-
-    for _ in range(100):
+    # Solve WTO
+    WTO = 50000
+    for _ in range(50):
         WF = WTO * (1 - Mff)
-        WOE = WTO - WF - Wpl
-        WE = WOE - attendant_weight - crew_weight
+        WE = WTO - WF - payload - crew - att
         WE_allow = 10 ** ((math.log10(WTO) - A) / B)
+        WTO += (WE_allow - WE) * 0.5
 
-        error = WE_allow - WE
-        WTO = WTO + error * 0.5  # convergence factor
-
-    # Final values
-    WF = WTO * (1 - Mff)
-    WOE = WTO - WF - Wpl
-    WE = WOE - attendant_weight - crew_weight
-    WE_allow = 10 ** ((math.log10(WTO) - A) / B)
-    diff = WE_allow - WE
-
-    # ------------------ Sensitivity ------------------
-    C = 1 - (1 + Mres) * (1 - Mff) - Mtfo
-    D = Wpl + crew_weight
-
-    F = (-B * (WTO**2) * (1 + Mres) * Mff) / (C * WTO * (1 - B) - D)
-
-    # Range case
-    dWTO_dCp_R = F * Rc / (375 * np_cruise * LD_cruise)
-    dWTO_dnp_R = -F * Rc * Cp_cruise / (375 * (np_cruise**2) * LD_cruise)
-    dWTO_dLD_R = -F * Rc * Cp_cruise / (375 * np_cruise * (LD_cruise**2))
-
-    # Endurance case
-    dWTO_dCp_E = F * E_loiter * V_loiter / (375 * np_cruise * LD_cruise)
-    dWTO_dnp_E = -F * E_loiter * V_loiter * Cp_cruise / (375 * (np_cruise**2) * LD_cruise)
-    dWTO_dLD_E = -F * E_loiter * V_loiter * Cp_cruise / (375 * np_cruise * (LD_cruise**2))
-
-    # Range sensitivity
-    dWTO_dR = F * Cp_cruise / (375 * np_cruise * LD_cruise)
-
-    # ------------------ UI ------------------
-    st.subheader("📊 Results")
-
+    # ------------------ Dashboard ------------------
     col1, col2, col3 = st.columns(3)
 
-    col1.metric("WTO (lb)", f"{WTO:.2f}")
-    col1.metric("Fuel Weight", f"{WF:.2f}")
+    col1.metric("✈️ WTO", f"{WTO:.0f} lb")
+    col1.metric("⛽ Fuel", f"{WF:.0f} lb")
 
-    col2.metric("Empty Weight", f"{WE:.2f}")
-    col2.metric("Allowable WE", f"{WE_allow:.2f}")
+    col2.metric("⚙️ Empty Weight", f"{WE:.0f} lb")
+    col2.metric("📏 Allowable WE", f"{WE_allow:.0f} lb")
 
-    col3.metric("Fuel Fraction", f"{Mff:.3f}")
-    col3.metric("Difference", f"{diff:.2f}")
+    col3.metric("🔥 Fuel Fraction", f"{Mff:.3f}")
 
-    # ------------------ Sensitivity Display ------------------
-    st.subheader("📉 Sensitivity Analysis")
+    # ------------------ Graph ------------------
+    st.subheader("📊 Range vs Weight")
 
-    st.markdown("### Range Case")
-    st.write("dWTO/dCp =", dWTO_dCp_R)
-    st.write("dWTO/dηp =", dWTO_dnp_R)
-    st.write("dWTO/d(L/D) =", dWTO_dLD_R)
+    ranges = np.linspace(200, 2000, 50)
+    weights = []
 
-    st.markdown("### Endurance Case")
-    st.write("dWTO/dCp =", dWTO_dCp_E)
-    st.write("dWTO/dηp =", dWTO_dnp_E)
-    st.write("dWTO/d(L/D) =", dWTO_dLD_E)
+    for r in ranges:
+        W5_W4 = 1 / math.exp(r / (375 * (np_eff / Cp) * LD))
+        Mff_temp = 0.99*0.995*0.995*0.985*W5_W4*0.97*0.985*0.995
 
-    st.markdown("### Range Sensitivity")
-    st.write("dWTO/dR =", dWTO_dR)
+        WTO_temp = 50000
+        for _ in range(20):
+            WF = WTO_temp * (1 - Mff_temp)
+            WE = WTO_temp - WF - payload - crew - att
+            WE_allow = 10 ** ((math.log10(WTO_temp) - A) / B)
+            WTO_temp += (WE_allow - WE) * 0.5
 
-    # Debug
-    with st.expander("🔍 Debug"):
-        st.write("Mff =", Mff)
-        st.write("F =", F)
+        weights.append(WTO_temp)
+
+    df = pd.DataFrame({"Range": ranges, "WTO": weights})
+
+    st.line_chart(df.set_index("Range"))
 
 else:
-    st.info("👈 اضغط Run Analysis بعد تعديل القيم")
+    st.info("👈 اضغط Run Simulation لتشغيل النظام")
