@@ -6,156 +6,129 @@ import plotly.express as px
 from fpdf import FPDF
 import io
 
-# --- 1. UI Configuration & Branding ---
-st.set_page_config(page_title="AeroDesign Pro: Integrated Solver", layout="wide")
+# --- 1. UI Setup ---
+st.set_page_config(page_title="AeroDesign Interactive Controller", layout="wide")
 
 st.markdown("""
     <style>
-    .main { background-color: #FFFFFF; color: #1A202C; }
-    .stMetric { border-top: 5px solid #002D72; background-color: #F8F9FA; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-    h1, h2, h3 { color: #002D72; font-family: 'Helvetica Neue', Arial, sans-serif; }
-    .stButton>button { background: linear-gradient(90deg, #002D72 0%, #0056b3 100%); color: white; height: 3.5em; font-weight: bold; border-radius: 8px; border: none; }
+    .main { background-color: #FFFFFF; }
+    .stMetric { border-top: 5px solid #002D72; background-color: #F8F9FA; border-radius: 8px; padding: 20px; }
+    h1, h2, h3 { color: #002D72; font-family: 'Segoe UI', sans-serif; }
+    .stSlider [data-baseweb="slider"] { margin-bottom: 25px; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("✈️ Aircraft Design Optimization & Sensitivity Suite")
-st.caption("Professional Aerospace Engineering Tool | High-Precision Weight Iteration")
+st.title("✈️ Aircraft Weight & Sensitivity Controller")
+st.caption("Manual Weight Control Mode | Equations 2.22, 2.44, and 2.49 Integrated")
 st.divider()
 
-# --- 2. Sidebar Parameters (Based on Homework Details) ---
-st.sidebar.header("📊 Engineering Input Module")
+# --- 2. Sidebar & Global Inputs ---
+st.sidebar.header("🕹️ Global Constants")
+pax = st.sidebar.number_input("Number of Passengers", value=34)
+w_pl = pax * 205
+w_crew = st.sidebar.number_input("Crew Weight (lbs)", value=615.0)
+d_val = w_pl + w_crew # D Factor from your equations
 
-with st.sidebar.expander("Payload & Crew Logistics", expanded=True):
-    pax = st.number_input("Number of Passengers", value=34)
-    w_pl = pax * 205 # Standard: 175 (pax) + 30 (baggage)
-    w_crew = st.number_input("Crew Weight (lbs)", value=615.0)
-    w_tfo = st.number_input("Trapped Fuel & Oil (lbs)", value=242.75)
+# --- 3. Main Variable: Take-off Weight (WTO) ---
+st.subheader("⚙️ Control Panel: Variable Gross Weight")
+# جعلنا WTO متغير يتحكم فيه المستخدم يدوياً
+wto_var = st.slider("Adjust Take-off Weight (WTO) in lbs", 
+                   min_value=30000.0, 
+                   max_value=100000.0, 
+                   value=48550.0, 
+                   step=10.0)
 
-with st.sidebar.expander("Mission Profile & Performance", expanded=True):
-    rc = st.number_input("Cruise Range (miles)", value=1265.847)
-    ld_c = st.number_input("L/D (Cruise Phase)", value=13.0)
-    cp_c = st.number_input("Cp Cruise (lbs/Hp/Hr)", value=0.6)
-    np_c = st.number_input("ηp (Propeller Efficiency)", value=0.85)
-    
-    eltr = st.number_input("Loiter Endurance (hrs)", value=0.75)
-    ld_l = st.number_input("L/D (Loiter Phase)", value=16.0)
-    cp_l = st.number_input("Cp Loiter", value=0.65)
+# --- 4. Engineering Engine (Logic from your notes) ---
+def calculate_system(wto):
+    # Performance Constants
+    rc, ld_c, cp_c, np_c = 1265.8, 13.0, 0.6, 0.85
+    eltr, ld_l, cp_l, np_l = 0.75, 16.0, 0.65, 0.80
+    m_res, m_tfo = 0.05, 0.005
+    coeff_a, coeff_b = 0.3774, 0.9647
 
-# Aircraft Statistical Constants (Table 2.15)
-coeff_a = 0.3774
-coeff_b = 0.9647
-
-# --- 3. Professional Engineering Engine ---
-def analyze_design(wto):
-    # Phase 1-4 Fractions
+    # Phase Fractions
     f_fixed = 0.990 * 0.995 * 0.995 * 0.985
-    # Phase 5: Cruise (Breguet Range - Base e)
     f_cruise = 1 / math.exp(rc / (375 * (np_c / cp_c) * ld_c))
-    # Phase 6: Loiter (Simplified constant from file)
     f_loiter = 0.970 
-    # Phase 7-8: Descent & Landing
     f_end = 0.985 * 0.995
-    
     mff = f_fixed * f_cruise * f_loiter * f_end
+    
+    # Factor C (Eq 2.22)
+    c_val = 1 - (1 + m_res) * (1 - mff) - m_tfo
+    
+    # Weight Analysis
     wf = wto * (1 - mff)
+    we_calc = wto - wf - d_val - (m_tfo * wto)
+    # Correct Log10 Usage for Allowable WE
+    we_allow = 10**((math.log10(wto) - coeff_a) / coeff_b)
     
-    # Empty Weight Calculation
-    we_tentative = wto - wf - w_pl - w_tfo - w_crew
-    # ALLOWABLE WE (Using Log10 as per official standards)
-    we_allowable = 10**((math.log10(wto) - coeff_a) / coeff_b)
-    
-    # SENSITIVITY CALCULATIONS (Direct Partial Derivatives)
-    # Range Sensitivity
-    s_r_cp = -rc / cp_c
-    s_r_ld = rc / ld_c
-    # Endurance Sensitivity
-    s_e_cp = -eltr / cp_l
-    s_e_ld = eltr / ld_l
+    # Sensitivity Factor F (Eq 2.44)
+    num_f = -coeff_b * (wto**2) * (1 + m_res) * mff
+    den_f = (c_val * wto * (1 - coeff_b)) - d_val
+    f_factor = num_f / den_f if den_f != 0 else 0
+
+    # Range Sensitivity (Eq 2.49 & 2.51)
+    dwto_dcp = (f_factor * rc) / (375 * np_c * ld_c)
+    dwto_dr = (f_factor * cp_c) / (375 * np_c * ld_c)
 
     return {
-        "mff": mff, "wf": wf, "we_c": we_tentative, "we_a": we_allowable,
-        "sens": {"r_cp": s_r_cp, "r_ld": s_r_ld, "e_cp": s_e_cp, "e_ld": s_e_ld}
+        "mff": mff, "wf": wf, "we_c": we_calc, "we_a": we_allow, "f": f_factor,
+        "c": c_val, "dw_dcp": dwto_dcp, "dw_dr": dwto_dr
     }
 
-# --- 4. Main Solver & Execution ---
-if st.button("🚀 EXECUTE 100% PROFESSIONAL ANALYSIS"):
-    # Automatic Solver to find Equilibrium WTO
-    def solver():
-        low, high = 10000.0, 150000.0
-        for _ in range(100):
-            mid = (low + high) / 2
-            res = analyze_design(mid)
-            if res['we_a'] > res['we_c']: low = mid
-            else: high = mid
-        return mid
+# --- 5. Execution & Visual Output ---
+res = calculate_system(wto_var)
+error = res['we_c'] - res['we_a']
 
-    final_wto = solver()
-    res = analyze_design(final_wto)
+# Performance Metrics Dashboard
+st.subheader("🏁 Real-Time Analysis")
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Current WTO", f"{wto_var:,.0f} lb")
+col2.metric("Calculated WE", f"{res['we_c']:,.1f} lb")
+col3.metric("Allowable WE", f"{res['we_a']:,.1f} lb")
+col4.metric("Convergence Error", f"{error:,.1f} lb", delta=error, delta_color="inverse")
 
-    # A. Metrics Dashboard
-    st.subheader("🏁 Optimization Results")
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Optimized WTO", f"{final_wto:,.1f} lb")
-    m2.metric("Fuel Weight (Wf)", f"{res['wf']:,.1f} lb")
-    m3.metric("Empty Weight (We)", f"{res['we_c']:,.1f} lb")
-    m4.metric("Fuel Fraction (Mff)", f"{res['mff']:.4f}")
+# Sensitivity Results Table
+st.divider()
+st.subheader("📉 Sensitivity Calculations (Eq 2.44 - 2.51)")
+s1, s2, s3 = st.columns(3)
+s1.info(f"**Sensitivity Factor (F):**\n\n {res['f']:,.0f}")
+s2.info(f"**∂WTO / ∂Cp:**\n\n {res['dw_dcp']:,.2f} lbs/unit")
+s3.info(f"**∂WTO / ∂R:**\n\n {res['dw_dr']:,.2f} lbs/mile")
 
-    # B. Detailed Sensitivity Report (Table Logic)
-    st.divider()
-    st.subheader("📉 Design Sensitivity Analysis")
-    sc1, sc2 = st.columns(2)
-    
-    with sc1:
-        st.info("**Range Sensitivity (Breguet Case)**")
-        st.write(f"∂R / ∂Cp: `{res['sens']['r_cp']:,.2f}` miles/unit")
-        st.write(f"∂R / ∂(L/D): `{res['sens']['r_ld']:,.2f}` miles/unit")
-    
-    with sc2:
-        st.info("**Endurance Sensitivity (Loiter Case)**")
-        st.write(f"∂E / ∂Cp: `{res['sens']['e_cp']:,.4f}` hrs/unit")
-        st.write(f"∂E / ∂(L/D): `{res['sens']['e_ld']:,.4f}` hrs/unit")
+# Visual Explanation of the Error
+st.divider()
+st.subheader("📊 Convergence Graphic")
+st.write("The goal is to adjust WTO until **Calculated WE** matches **Allowable WE** (Error = 0).")
 
-    # C. High-Fidelity Convergence Plot
-    st.divider()
-    st.subheader("📈 Weight Convergence Mapping")
-    w_axis = np.linspace(final_wto*0.7, final_wto*1.3, 60)
-    sweep = [analyze_design(w) for w in w_axis]
-    df_plot = pd.DataFrame({
-        "Gross Weight (WTO)": w_axis,
-        "Tentative Empty Weight": [x['we_c'] for x in sweep],
-        "Allowable Empty Weight": [x['we_a'] for x in sweep]
-    })
-    
-    fig = px.line(df_plot, x="Gross Weight (WTO)", y=["Tentative Empty Weight", "Allowable Empty Weight"],
-                  color_discrete_map={"Tentative Empty Weight": "#002D72", "Allowable Empty Weight": "#D62728"})
-    fig.add_vline(x=final_wto, line_dash="dash", line_color="green", annotation_text="Converged WTO")
-    fig.update_layout(plot_bgcolor='white', hovermode="x unified")
-    st.plotly_chart(fig, use_container_width=True)
+w_axis = np.linspace(30000, 80000, 100)
+sweep = [calculate_system(w) for w in w_axis]
+df_plot = pd.DataFrame({
+    "WTO": w_axis,
+    "Calculated Empty Weight": [x['we_c'] for x in sweep],
+    "Allowable Empty Weight": [x['we_a'] for x in sweep]
+})
 
-    # D. PDF Technical Report
-    def generate_pdf():
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", 'B', 16)
-        pdf.cell(200, 15, "Engineering Design & Weight Analysis Report", ln=True, align='C')
-        pdf.ln(10)
-        pdf.set_font("Arial", '', 12)
-        lines = [
-            f"Final Optimized WTO: {final_wto:,.2f} lbs",
-            f"Calculated Fuel Weight: {res['wf']:,.2f} lbs",
-            f"Calculated Empty Weight: {res['we_c']:,.2f} lbs",
-            f"Mission Fuel Fraction: {res['mff']:.4f}",
-            "",
-            "Sensitivity Results:",
-            f"- Range Sensitivity (dR/dCp): {res['sens']['r_cp']:,.2f}",
-            f"- Endurance Sensitivity (dE/dCp): {res['sens']['e_cp']:,.4f}"
-        ]
-        for line in lines:
-            pdf.cell(0, 10, line, ln=True)
-        return pdf.output(dest='S').encode('latin-1')
+fig = px.line(df_plot, x="WTO", y=["Calculated Empty Weight", "Allowable Empty Weight"], 
+              color_discrete_sequence=["#002D72", "#D62728"],
+              title="Weight Convergence (Find the intersection point)")
+# إضافة خط يوضح موقع الوزن الحالي الذي اختاره المستخدم
+fig.add_vline(x=wto_var, line_dash="dash", line_color="black", annotation_text="Your Current Selection")
+fig.update_layout(plot_bgcolor='white', hovermode="x unified")
+st.plotly_chart(fig, use_container_width=True)
 
-    pdf_report = generate_pdf()
-    st.download_button("📥 DOWNLOAD TECHNICAL REPORT (PDF)", data=pdf_report, file_name="Aircraft_Technical_Analysis.pdf")
+# PDF Generation
+def gen_pdf():
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, "Aircraft Weight & Sensitivity Report", ln=True, align='C')
+    pdf.ln(10)
+    pdf.set_font("Arial", '', 12)
+    pdf.cell(0, 10, f"Selected Take-off Weight: {wto_var:,.2f} lbs", ln=True)
+    pdf.cell(0, 10, f"Sensitivity Factor F: {res['f']:,.2f}", ln=True)
+    pdf.cell(0, 10, f"Weight/Range Sensitivity (dWTO/dR): {res['dw_dr']:,.2f} lbs/mi", ln=True)
+    return pdf.output(dest='S').encode('latin-1')
 
-else:
-    st.info("System Standby. Configuration loaded. Press 'Execute' to start the solver.")
+pdf_data = gen_pdf()
+st.download_button("📥 DOWNLOAD TECHNICAL REPORT (PDF)", data=pdf_data, file_name="Aircraft_Report.pdf")
