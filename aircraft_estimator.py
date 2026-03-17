@@ -5,12 +5,13 @@ import pandas as pd
 import io
 
 # ------------------ Page ------------------
-st.set_page_config(page_title="Aircraft Cockpit", page_icon="✈️", layout="wide")
+st.set_page_config(page_title="Aircraft Design Tool", page_icon="✈️", layout="wide")
 
-st.title("✈️ Aircraft Cockpit Pro")
+st.title("✈️ Aircraft Preliminary Design Tool")
+st.markdown("### Weight Estimation & Sensitivity Analysis")
 
 # ------------------ Sidebar ------------------
-st.sidebar.header("✏️ Inputs")
+st.sidebar.header("✏️ Input Parameters")
 
 passengers = st.sidebar.number_input("Passengers", value=34)
 passenger_weight = st.sidebar.number_input("Passenger Weight (lb)", value=175.0)
@@ -22,10 +23,9 @@ att = st.sidebar.number_input("Attendant (lb)", value=242.75)
 Rc = st.sidebar.number_input("Range (mile)", value=1265.847)
 LD = st.sidebar.number_input("L/D", value=13.0)
 Cp = st.sidebar.number_input("Cp", value=0.6)
-np_eff = st.sidebar.number_input("Efficiency", value=0.85)
+np_eff = st.sidebar.number_input("ηp", value=0.85)
 
-# WTO guess
-WTO = st.sidebar.number_input("WTO Guess", value=48550.0)
+WTO = st.sidebar.number_input("WTO Guess (lb)", value=48550.0)
 
 # Constants
 A = 0.3774
@@ -34,45 +34,37 @@ B = 0.9647
 payload = passengers * (passenger_weight + baggage_weight)
 
 # ------------------ Button ------------------
-if st.button("🚀 Calculate"):
+if st.button("🚀 Run Analysis"):
 
-    # Fuel fraction
+    # ------------------ Calculations ------------------
     W5_W4 = 1 / math.exp(Rc / (375 * (np_eff / Cp) * LD))
     Mff = 0.99*0.995*0.995*0.985*W5_W4*0.97*0.985*0.995
 
-    # Weights
     WF = WTO * (1 - Mff)
     WE = WTO - WF - payload - crew - att
     WE_allow = 10 ** ((math.log10(WTO) - A) / B)
+    diff = WE_allow - WE
 
-    # ------------------ Metrics ------------------
-    col1, col2, col3 = st.columns(3)
+    # ------------------ Results Layout ------------------
+    st.subheader("📊 Main Results")
 
-    col1.metric("WTO (lb)", f"{WTO:.0f}")
-    col1.metric("Fuel Weight", f"{WF:.0f}")
+    col1, col2, col3, col4 = st.columns(4)
 
-    col2.metric("Empty Weight", f"{WE:.0f}")
-    col2.metric("Allowable WE", f"{WE_allow:.0f}")
+    col1.metric("WTO (lb)", f"{WTO:,.0f}")
+    col2.metric("Fuel Weight (lb)", f"{WF:,.0f}")
+    col3.metric("Empty Weight (lb)", f"{WE:,.0f}")
+    col4.metric("Allowable WE (lb)", f"{WE_allow:,.0f}")
 
-    col3.metric("Fuel Fraction", f"{Mff:.3f}")
-    col3.metric("Difference", f"{(WE_allow - WE):.2f}")
+    st.markdown("---")
 
-    # ------------------ Gauge ------------------
-    st.subheader("🎯 Fuel Fraction Gauge")
-    st.progress(min(max(Mff, 0.0), 1.0))
+    col5, col6 = st.columns(2)
+    col5.metric("Fuel Fraction", f"{Mff:.4f}")
+    col6.metric("Difference (lb)", f"{diff:,.2f}")
 
-    # ------------------ Animation ------------------
-    st.subheader("🛫 Flight Progress")
-    progress = st.progress(0)
-    for i in range(100):
-        progress.progress(i + 1)
+    # ------------------ Graph 1 ------------------
+    st.subheader("📈 Effect of Range on Weight")
 
-    st.success("Flight Completed ✈️")
-
-    # ------------------ Graph ------------------
-    st.subheader("📊 Range vs Weight")
-
-    ranges = np.linspace(200, 2000, 30)
+    ranges = np.linspace(200, 2000, 50)
     weights = []
 
     for r in ranges:
@@ -82,26 +74,43 @@ if st.button("🚀 Calculate"):
         WE_temp = WTO - WF_temp - payload - crew - att
         weights.append(WE_temp)
 
-    df = pd.DataFrame({"Range": ranges, "Weight": weights})
-    st.line_chart(df.set_index("Range"))
+    df = pd.DataFrame({"Range (mile)": ranges, "Empty Weight (lb)": weights})
 
-    # ------------------ Comparison ------------------
-    st.subheader("📊 Aircraft Comparison")
+    st.line_chart(df.set_index("Range (mile)"))
 
-    other_WTO = st.number_input("Compare with WTO", value=40000.0)
+    st.caption("Relationship between mission range and aircraft empty weight")
 
-    compare_df = pd.DataFrame({
-        "Aircraft": ["Your Aircraft", "Other"],
-        "WTO": [WTO, other_WTO]
-    })
+    # ------------------ Graph 2 ------------------
+    st.subheader("📈 Sensitivity to L/D")
 
-    st.bar_chart(compare_df.set_index("Aircraft"))
+    LD_vals = np.linspace(8, 20, 40)
+    WTO_vals = []
 
-    # ------------------ PDF Export (FIXED) ------------------
+    for ld in LD_vals:
+        W5_W4 = 1 / math.exp(Rc / (375 * (np_eff / Cp) * ld))
+        Mff_temp = 0.99*0.995*0.995*0.985*W5_W4*0.97*0.985*0.995
+
+        WTO_temp = WTO
+        for _ in range(20):
+            WF_temp = WTO_temp * (1 - Mff_temp)
+            WE_temp = WTO_temp - WF_temp - payload - crew - att
+            WE_allow_temp = 10 ** ((math.log10(WTO_temp) - A) / B)
+            WTO_temp += (WE_allow_temp - WE_temp) * 0.5
+
+        WTO_vals.append(WTO_temp)
+
+    df2 = pd.DataFrame({"L/D": LD_vals, "WTO (lb)": WTO_vals})
+
+    st.line_chart(df2.set_index("L/D"))
+
+    st.caption("Sensitivity of takeoff weight to aerodynamic efficiency")
+
+    # ------------------ PDF Export ------------------
     st.subheader("📄 Export Report")
 
     if st.button("Generate PDF"):
-        from reportlab.platypus import SimpleDocTemplate, Paragraph
+
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
         from reportlab.lib.styles import getSampleStyleSheet
 
         buffer = io.BytesIO()
@@ -109,19 +118,24 @@ if st.button("🚀 Calculate"):
         styles = getSampleStyleSheet()
 
         content = []
-        content.append(Paragraph(f"WTO: {WTO:.2f}", styles["Normal"]))
-        content.append(Paragraph(f"Fuel: {WF:.2f}", styles["Normal"]))
-        content.append(Paragraph(f"Empty Weight: {WE:.2f}", styles["Normal"]))
-        content.append(Paragraph(f"Fuel Fraction: {Mff:.3f}", styles["Normal"]))
+
+        content.append(Paragraph("Aircraft Design Report", styles["Title"]))
+        content.append(Spacer(1, 10))
+
+        content.append(Paragraph(f"WTO: {WTO:.2f} lb", styles["Normal"]))
+        content.append(Paragraph(f"Fuel Weight: {WF:.2f} lb", styles["Normal"]))
+        content.append(Paragraph(f"Empty Weight: {WE:.2f} lb", styles["Normal"]))
+        content.append(Paragraph(f"Allowable WE: {WE_allow:.2f} lb", styles["Normal"]))
+        content.append(Paragraph(f"Fuel Fraction: {Mff:.4f}", styles["Normal"]))
 
         doc.build(content)
 
         st.download_button(
-            label="📥 Download PDF",
-            data=buffer.getvalue(),
-            file_name="aircraft_report.pdf",
+            "📥 Download PDF",
+            buffer.getvalue(),
+            file_name="Aircraft_Report.pdf",
             mime="application/pdf"
         )
 
 else:
-    st.info("👈 اضغط Calculate بعد إدخال القيم")
+    st.info("👈 Enter values and click Run Analysis")
