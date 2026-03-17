@@ -18,12 +18,12 @@ st.sidebar.header("✏️ Input Parameters")
 # Payload
 st.sidebar.subheader("Payload")
 passengers = st.sidebar.number_input("Passengers", min_value=0, value=34)
-passenger_weight = st.sidebar.number_input("Passenger Weight (lb)", value=175)
-baggage_weight = st.sidebar.number_input("Baggage Weight (lb)", value=30)
+passenger_weight = st.sidebar.number_input("Passenger Weight (lb)", value=175.0)
+baggage_weight = st.sidebar.number_input("Baggage Weight (lb)", value=30.0)
 
 # Crew
 st.sidebar.subheader("Crew")
-crew_weight = st.sidebar.number_input("Crew Weight Total (lb)", value=615)
+crew_weight = st.sidebar.number_input("Crew Weight Total (lb)", value=615.0)
 attendant_weight = st.sidebar.number_input("Attendant Weight (lb)", value=242.75)
 
 # Cruise
@@ -66,10 +66,10 @@ if calculate:
     W3_W2 = 0.995
     W4_W3 = 0.985
 
-    # Cruise (IMPORTANT)
+    # Cruise
     W5_W4 = 1 / math.exp(Rc / (375 * (np_cruise / Cp_cruise) * LD_cruise))
 
-    # Loiter (IMPORTANT)
+    # Loiter
     W6_W5 = 1 / math.exp(E_loiter / (375 * (1 / V_loiter) * (np_loiter / Cp_loiter) * LD_loiter))
 
     W7_W6 = 0.985
@@ -94,8 +94,8 @@ if calculate:
     WOE = WTO_guess - WF - Wpl
     WE = WOE - attendant_weight - crew_weight
 
-    # Allowable Empty Weight (FIXED)
-    WE_allow = math.exp((math.log(WTO_guess) - A) / B)
+    # ✅ FIXED (log10 instead of ln)
+    WE_allow = 10 ** ((math.log10(WTO_guess) - A) / B)
 
     diff = WE_allow - WE
 
@@ -121,12 +121,12 @@ if calculate:
     col3.metric("Fuel Fraction", f"{Mff:.3f}")
     col3.metric("Difference", f"{diff:.2f}")
 
-    # ------------------ Debug (optional) ------------------
+    # Debug
     with st.expander("🔍 Debug Values"):
         st.write("W5/W4 =", W5_W4)
         st.write("W6/W5 =", W6_W5)
 
-    # ------------------ Sensitivity ------------------
+    # Sensitivity
     st.subheader("📉 Sensitivity")
 
     st.write(f"F = {F:.2f}")
