@@ -310,7 +310,8 @@ with tab1:
         ), row=1, col=2)
 
         fig_m.update_layout(
-            **{k:v for k,v in _B.items()},
+            paper_bgcolor='rgba(255,255,255,0)',
+            plot_bgcolor='#FAFBFC',
             height=230,
             showlegend=False,
             margin=dict(l=40, r=10, t=36, b=36),
@@ -550,7 +551,8 @@ with tab3:
             marker=dict(color='#0F172A',size=5,line=dict(color='#F59E0B',width=1.5)),
             fill='tozeroy',fillcolor='rgba(245,158,11,0.06)',name='Fuel burned'),row=1,col=2)
         fig_w.update_layout(
-            **{k:v for k,v in _B.items()},
+            paper_bgcolor='rgba(255,255,255,0)',
+            plot_bgcolor='#FAFBFC',
             height=210, showlegend=False,
             margin=dict(l=40,r=10,t=34,b=34),
         )
