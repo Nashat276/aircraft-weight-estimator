@@ -1,63 +1,103 @@
 import streamlit as st
 import math
 
-st.title("✈ Aircraft Preliminary Sizing Tool")
+st.title("✈ Aircraft Preliminary Design Tool")
 
-st.write("Tool based on aircraft sizing calculations")
+# حفظ القيم حتى بعد الحساب
+if "results" not in st.session_state:
+    st.session_state.results = None
 
-# ------------------------
-# Inputs
-# ------------------------
+st.header("Aircraft Input Data")
 
-st.header("Mission Inputs")
+passengers = st.number_input(
+    "Number of passengers",
+    min_value=1,
+    value=34,
+    step=1
+)
 
-passengers = st.number_input("Number of passengers", value=34)
-passenger_weight = st.number_input("Passenger weight (lb)", value=175)
-baggage_weight = st.number_input("Baggage weight (lb)", value=30)
+passenger_weight = st.number_input(
+    "Passenger weight (lb)",
+    min_value=50.0,
+    value=175.0
+)
 
-crew_weight = st.number_input("Total crew weight (lb)", value=600)
+baggage_weight = st.number_input(
+    "Baggage weight (lb)",
+    min_value=0.0,
+    value=30.0
+)
 
-range_nm = st.number_input("Range (nautical miles)", value=800)
+crew_weight = st.number_input(
+    "Crew weight total (lb)",
+    min_value=0.0,
+    value=600.0
+)
 
-loiter_time = st.number_input("Loiter time (hours)", value=0.5)
+L_D = st.number_input(
+    "Lift to Drag Ratio (L/D)",
+    min_value=1.0,
+    value=15.0
+)
 
-L_D = st.number_input("Lift-to-Drag ratio (L/D)", value=15.0)
+cp = st.number_input(
+    "Specific fuel consumption",
+    min_value=0.01,
+    value=0.5
+)
 
-cp = st.number_input("Specific fuel consumption", value=0.5)
+eta = st.number_input(
+    "Propulsive efficiency",
+    min_value=0.1,
+    value=0.85
+)
 
-eta = st.number_input("Propulsive efficiency", value=0.85)
+fuel_fraction = st.number_input(
+    "Fuel fraction",
+    min_value=0.01,
+    max_value=0.9,
+    value=0.25
+)
 
-Mff = st.number_input("Mission fuel fraction", value=0.764)
+empty_fraction = st.number_input(
+    "Empty weight fraction",
+    min_value=0.01,
+    max_value=0.9,
+    value=0.55
+)
 
-# ------------------------
-# Calculate Button
-# ------------------------
+# زر الحساب
+if st.button("Calculate Aircraft Data"):
 
-if st.button("Calculate Aircraft Size"):
-
-    # Payload
     payload = passengers * (passenger_weight + baggage_weight)
 
-    # Initial Takeoff weight guess
-    WTO_guess = payload * 3
+    WTO = payload / (1 - fuel_fraction - empty_fraction)
 
-    # Fuel weight
-    fuel_weight = WTO_guess * (1 - Mff)
+    fuel_weight = WTO * fuel_fraction
 
-    # Empty weight
-    empty_weight = WTO_guess - payload - fuel_weight
+    empty_weight = WTO * empty_fraction
 
-    # Range using Breguet
-    range_est = (eta / cp) * L_D * math.log(WTO_guess / (WTO_guess - fuel_weight))
+    range_est = (eta / cp) * L_D * math.log(WTO / (WTO - fuel_weight))
 
-    # ------------------------
-    # Results
-    # ------------------------
+    st.session_state.results = {
+        "payload": payload,
+        "fuel": fuel_weight,
+        "empty": empty_weight,
+        "wto": WTO,
+        "range": range_est
+    }
+
+# عرض النتائج
+if st.session_state.results:
 
     st.header("Results")
 
-    st.write("Payload Weight:", round(payload,2), "lb")
-    st.write("Fuel Weight:", round(fuel_weight,2), "lb")
-    st.write("Empty Weight:", round(empty_weight,2), "lb")
-    st.write("Takeoff Weight (WTO):", round(WTO_guess,2), "lb")
-    st.write("Estimated Range:", round(range_est,2), "nm")
+    st.write("Payload Weight:", round(st.session_state.results["payload"],2),"lb")
+
+    st.write("Fuel Weight:", round(st.session_state.results["fuel"],2),"lb")
+
+    st.write("Empty Weight:", round(st.session_state.results["empty"],2),"lb")
+
+    st.write("Takeoff Weight:", round(st.session_state.results["wto"],2),"lb")
+
+    st.write("Estimated Range:", round(st.session_state.results["range"],2),"nm")
