@@ -8,88 +8,79 @@ import plotly.express as px
 st.set_page_config(page_title="Aircraft Design Pro", layout="wide")
 st.title("✈️ Aircraft Design Weight Analysis")
 
-# --- المدخلات من ملف الواجب ---
-st.sidebar.header("⚙️ Mission Parameters")
+# --- المدخلات الثابتة من ملف الواجب ---
+# تم حسابها بناءً على Source 2 في الملف
+W_pl = 6970.0      # Payload weight 
+W_crew = 615.0     # Crew weight 
+W_tfo = 242.75     # Trapped Fuel & Oil 
+R_c = 1265.847     # Range in statute miles 
+LD_cruise = 13.0   # L/D Cruise 
+Cp_cruise = 0.6    # Cp cruise 
+np_cruise = 0.85   # Efficiency cruise 
 
-# ثابت من Source 2 & 3
-W_pl = 6970.0      # Payload 
-W_crew = 615.0     # Crew weight [cite: 2]
-W_tfo = 242.75     # Trapped Fuel & Oil [cite: 2]
-R_c = 1265.847     # Range in statute miles [cite: 2]
-LD_cruise = 13.0   # L/D Cruise [cite: 2]
-Cp_cruise = 0.6    # Cp cruise [cite: 2]
-np_cruise = 0.85   # Efficiency cruise [cite: 2]
+# الثوابت الإحصائية [Source 2]
+coeff_a = 0.3774 [cite: 2]
+coeff_b = 0.9647 [cite: 2]
 
-# الثوابت الإحصائية [cite: 2]
-coeff_A = 0.3774
-coeff_B = 0.9647
-
+st.sidebar.header("⚙️ User Input")
 wto_guess = st.sidebar.number_input("WTO Guess (lbs)", value=48550.0)
 
-# --- محرك الحسابات الدقيق ---
+# --- محرك الحسابات ---
 def perform_analysis(wto):
-    # مراحل الوقود بناءً على Step 3 
-    f1 = 0.990  # Engine Start
-    f2 = 0.995  # Taxi
-    f3 = 0.995  # Take-off
-    f4 = 0.985  # Climb
+    # مراحل الوقود بناءً على Step 3 في الملف 
+    f1, f2, f3, f4 = 0.990, 0.995, 0.995, 0.985 
     
-    # Cruise Phase (W5/W4) 
-    # Equation: 1 / exp(Rc / (375 * (np/Cp) * (L/D)))
+    # مرحلة Cruise (W5/W4) - Equation 2.9 
     denominator = 375 * (np_cruise / Cp_cruise) * LD_cruise
-    f5 = 1 / math.exp(R_c / denominator) # النتيجة يجب أن تكون 0.833 
+    f5 = 1 / math.exp(R_c / denominator) 
     
-    f6 = 0.970  # Loiter 
-    f7 = 0.985  # Descent 
-    f8 = 0.995  # Landing 
+    # مراحل Loiter, Descent, Landing 
+    f6, f7, f8 = 0.970, 0.985, 0.995
     
-    # Total Fuel Fraction (Mff)
-    mff = f1 * f2 * f3 * f4 * f5 * f6 * f7 * f8 # النتيجة 0.764 
+    # Total Fuel Fraction (Mff) 
+    mff = f1 * f2 * f3 * f4 * f5 * f6 * f7 * f8
+    wf = wto * (1 - mff)
     
-    wf = wto * (1 - mff) # Fuel weight
+    # حساب الوزن الفارغ الفعلي (Tentative WE) 
+    we_tent = wto - wf - W_pl - W_tfo - W_crew
     
-    # Step 5: Tentative Empty Weight 
-    we_tent = wto - wf - W_pl - W_tfo - W_crew # النتيجة 29272.8 
-    
-    # Step 6: Allowable Empty Weight 
-    # Equation: invLog[(log(Wto)-A)/B]
-    we_allow = 10**((math.log10(wto) - coeff_a) / coeff_b) # النتيجة 29272.18 
+    # حساب الوزن الفارغ المسموح إحصائياً (Allowable WE) - Step 6 
+    # تم تصحيح أسماء المتغيرات هنا لحل الـ NameError
+    we_allow = 10**((math.log10(wto) - coeff_a) / coeff_b) 
     
     return mff, wf, we_tent, we_allow
 
-# --- عرض النتائج ---
-if st.button("🚀 Calculate"):
+# --- التنفيذ وعرض النتائج ---
+if st.button("🚀 Run Analysis"):
     mff, wf, we_calc, we_allow = perform_analysis(wto_guess)
     error = we_calc - we_allow
 
     st.subheader("📊 Calculation Results")
     col1, col2, col3 = st.columns(3)
-    col1.metric("Mff (Fuel Fraction)", f"{mff:.3f}")
+    col1.metric("Fuel Fraction (Mff)", f"{mff:.3f}")
     col2.metric("Fuel Weight (WF)", f"{wf:,.1f} lbs")
-    col3.metric("Payload (Wpl)", f"{W_pl:,.0f} lbs")
+    col3.metric("Difference (Error)", f"{error:.2f} lbs", delta=error, delta_color="inverse")
 
     st.markdown("---")
-    st.subheader("⚖️ Weight Matching (Step 6)")
-    c1, c2, c3 = st.columns(3)
-    c1.write(f"**Tentative WE:** {we_calc:,.2f} lbs")
-    c2.write(f"**Allowable WE:** {we_allow:,.2f} lbs")
-    c3.metric("Difference", f"{error:.2f} lbs", delta=error, delta_color="inverse")
+    st.subheader("⚖️ Weight Matching Verification")
+    c1, c2 = st.columns(2)
+    c1.write(f"**Tentative WE (Step 5):** {we_calc:,.2f} lbs")
+    c2.write(f"**Allowable WE (Step 6):** {we_allow:,.2f} lbs")
 
     if abs(error) < 1.0:
-        st.success("✅ التقارب ممتاز! الوزن الإجمالي صحيح تماماً.")
+        st.success("✅ الوزن متطابق! قيمة WTO صحيحة.")
     else:
-        st.warning("⚠️ الفرق كبير، يرجى تعديل قيمة WTO Guess للوصول للتقارب.")
+        st.warning("⚠️ يرجى تعديل WTO Guess لتقليل الفرق.")
 
-    # الرسم البياني للحساسية (Range Sensitivity)
-    st.subheader("📈 Range Sensitivity")
-    ranges = np.linspace(500, 2000, 30)
-    # ملاحظة: في الرسم نثبت الـ WTO ونغير المدى لنرى تأثيره على الوزن الفارغ المتاح
+    # رسم الحساسية
+    st.subheader("📈 Range Sensitivity Plot")
+    ranges = np.linspace(500, 2000, 20)
     we_trend = []
     for r in ranges:
         f_c = 1 / math.exp(r / (375 * (np_cruise / Cp_cruise) * LD_cruise))
         m_tmp = (0.99*0.995*0.995*0.985) * f_c * (0.970*0.985*0.995)
         we_trend.append(wto_guess - (wto_guess*(1-m_tmp)) - W_pl - W_tfo - W_crew)
     
-    df_plot = pd.DataFrame({"Range": ranges, "WE Tentative": we_trend})
-    fig = px.line(df_plot, x="Range", y="WE Tentative", title="How Range affects Empty Weight Margin")
+    df_plot = pd.DataFrame({"Range": ranges, "WE Available": we_trend})
+    fig = px.line(df_plot, x="Range", y="WE Available", title="How Range impacts available Empty Weight")
     st.plotly_chart(fig, use_container_width=True)
