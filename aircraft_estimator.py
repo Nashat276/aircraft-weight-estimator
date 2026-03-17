@@ -6,160 +6,181 @@ import plotly.graph_objects as go
 from fpdf import FPDF
 import io
 
-# --- 1. AERO-INDUSTRIAL THEME ---
-st.set_page_config(page_title="AeroOptimizer Pro | Executive Edition", layout="wide")
+# --- 1. THEME & UI SETUP ---
+st.set_page_config(page_title="Aircraft Design Suite | Professional Edition", layout="wide")
 
 st.markdown("""
     <style>
     .main { background-color: #F8FAFC; }
-    div[data-testid="stMetric"] { background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; }
-    h1, h2, h3 { color: #0F172A; font-family: 'Inter', sans-serif; }
+    div[data-testid="stMetric"] { background-color: #FFFFFF; border-left: 5px solid #0F172A; border-radius: 4px; }
     .stSidebar { background-color: #0F172A !important; }
+    h1, h2, h3 { color: #0F172A; font-family: 'Inter', sans-serif; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. SIDEBAR: THE DATA VAULT (All Inputs) ---
-st.sidebar.title("🛠️ Project Inputs")
+# --- 2. SIDEBAR: FULL MISSION INPUTS (All Parameters) ---
+st.sidebar.title("🛠️ Design Parameters")
 
-with st.sidebar.expander("Mission Payload", expanded=True):
-    pax = st.number_input("Passengers", value=34)
-    w_pl = pax * 205
-    w_crew = st.number_input("Crew Weight (lbs)", value=615.0)
-    d_fixed = w_pl + w_crew
+with st.sidebar:
+    st.subheader("1. Design Driver")
+    # WTO moved to inputs as requested
+    wto_input = st.number_input("Take-off Weight (WTO) - lbs", value=48550.0, step=100.0, help="The primary variable for weight convergence.")
 
-with st.sidebar.expander("Flight Profile", expanded=True):
-    rc = st.number_input("Design Range (mi)", value=1265.8)
-    eltr = st.number_input("Endurance (hrs)", value=0.75)
-    m_res = st.number_input("Reserves (Mres)", value=0.05)
-    m_tfo = st.number_input("TFO Ratio", value=0.005)
+    with st.sidebar.expander("2. Payload & Crew Details", expanded=False):
+        pax = st.number_input("Passenger Count", value=34)
+        w_pax_unit = 205 # Includes baggage
+        w_pl = pax * w_pax_unit
+        w_crew = st.number_input("Total Crew Weight (lbs)", value=615.0)
+        d_val = w_pl + w_crew
 
-with st.sidebar.expander("Aerodynamics", expanded=True):
-    ld_c = st.slider("Cruise L/D", 10.0, 20.0, 13.0)
-    cp_c = st.number_input("SFC (Cp)", value=0.6)
-    np_c = st.slider("Prop Eff (ηp)", 0.6, 0.95, 0.85)
+    with st.sidebar.expander("3. Mission & Fuel Specs", expanded=False):
+        rc = st.number_input("Cruise Range (miles)", value=1265.8)
+        eltr = st.number_input("Loiter Endurance (hrs)", value=0.75)
+        m_res = st.number_input("Reserve Fuel Factor", value=0.05)
+        m_tfo = st.number_input("Trapped Fuel Factor (TFO)", value=0.005)
 
-# --- 3. CORE LOGIC ENGINE ---
-def run_solver(wto):
-    # Phase Fractions
-    f_p = 0.990 * 0.995 * 0.995 * 0.985
-    f_c = 1 / math.exp(rc / (375 * (np_c / cp_c) * ld_c))
-    f_l = 0.970 
-    f_e = 0.985 * 0.995
-    mff = f_p * f_c * f_l * f_e
+    with st.sidebar.expander("4. Aerodynamic Efficiency", expanded=False):
+        ld_c = st.number_input("L/D Ratio (Cruise)", value=13.0)
+        np_c = st.number_input("Prop Efficiency (ηp)", value=0.85)
+        cp_c = st.number_input("SFC (Cp) - lbs/hp/hr", value=0.6)
+        ld_l = st.number_input("L/D Ratio (Loiter)", value=16.0)
+        cp_l = st.number_input("SFC (Loiter)", value=0.65)
+
+# --- 3. COMPUTATIONAL ENGINE (MDAO Logic) ---
+def run_sizing_logic(wto):
+    # Mission Phase Fractions (Step-by-Step as per Homework)
+    f1 = 0.990 * 0.995 * 0.995 * 0.985 # Engine start to Climb
+    f_cruise = 1 / math.exp(rc / (375 * (np_c / cp_c) * ld_c))
+    f_loiter = 0.970 
+    f_land = 0.985 * 0.995
+    mff = f1 * f_cruise * f_loiter * f_land
     
-    # Matching Logic
+    # Matching Equations
     wf = wto * (1 - mff)
-    we_req = wto - wf - d_fixed - (m_tfo * wto)
-    we_allow = 10**((math.log10(wto) - 0.3774) / 0.9647)
+    we_required = wto - wf - d_val - (m_tfo * wto)
+    # Structural Constraint (Statistical Model)
+    we_allowable = 10**((math.log10(wto) - 0.3774) / 0.9647)
     
-    # Sensitivity (Growth Factors)
+    # Sensitivity Coefficients (F-Factor)
     c_val = 1 - (1 + m_res) * (1 - mff) - m_tfo
-    num_f = -0.9647 * (wto**2) * (1 + m_res) * mff
-    den_f = (c_val * wto * (1 - 0.9647)) - d_fixed
-    f_growth = num_f / den_f if den_f != 0 else 0
+    f_growth = (-0.9647 * (wto**2) * (1 + m_res) * mff) / ((c_val * wto * (1 - 0.9647)) - d_val)
     
-    # Derivatives
+    # Partial Derivatives
     dw_dr = (f_growth * cp_c) / (375 * np_c * ld_c)
     dw_dcp = (f_growth * rc) / (375 * np_c * ld_c)
     
     return locals()
 
-# --- 4. MAIN INTERFACE ---
-st.title("Aeronautical Weight & Sensitivity Dashboard")
-st.write("Professional MDAO Environment for Conceptual Sizing")
-st.divider()
+res = run_sizing_logic(wto_input)
 
-wto_var = st.select_slider("Select WTO for Analysis (lbs)", options=np.round(np.arange(30000, 80005, 5), 2), value=48550.0)
-res = run_solver(wto_var)
+# --- 4. DASHBOARD PRESENTATION ---
+st.title("Aeronautical Systems Design Dashboard")
+st.markdown("---")
 
-# Results Matrix
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Fuel Fraction (Mff)", f"{res['mff']:.4f}")
-m2.metric("Growth Factor (F)", f"{res['f_growth']:,.2f}")
-m3.metric("Matching Error", f"{res['we_req'] - res['we_allow']:,.1f} lb")
-m4.metric("Sensitivity dW/dR", f"{res['dw_dr']:.2f}")
+# Row 1: Key Performance Metrics
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Mission Fuel Fraction", f"{res['mff']:.4f}")
+c2.metric("Growth Factor (F)", f"{res['f_growth']:,.2f}")
+c3.metric("Current WTO", f"{wto_input:,.0f} lb")
+error = res['we_required'] - res['we_allowable']
+c4.metric("Convergence Delta", f"{error:,.1f} lb", delta=error, delta_color="inverse")
 
-# --- 5. ADVANCED ENGINEERING GRAPH ---
-st.subheader("Weight Convergence & Feasibility Map")
+# Row 2: Graphical Analysis
+st.subheader("📈 Design Feasibility & Weight Convergence Map")
+
 w_axis = np.linspace(35000, 75000, 100)
-sweep = [run_solver(w) for w in w_axis]
+sweep = [run_sizing_logic(w) for w in w_axis]
 
 fig = go.Figure()
-# Required WE Curve
-fig.add_trace(go.Scatter(x=w_axis, y=[x['we_req'] for x in sweep], name='Mission Required WE', 
-                         line=dict(color='#0F172A', width=3), fill='tonexty', fillcolor='rgba(15, 23, 42, 0.05)'))
-# Allowable WE Curve
-fig.add_trace(go.Scatter(x=w_axis, y=[x['we_allow'] for x in sweep], name='Structural Allowable WE', 
-                         line=dict(color='#E11D48', width=3, dash='dash')))
+fig.add_trace(go.Scatter(x=w_axis, y=[x['we_required'] for x in sweep], name='Mission Required Weight', line=dict(color='#2563EB', width=4)))
+fig.add_trace(go.Scatter(x=w_axis, y=[x['we_allowable'] for x in sweep], name='Structural Allowable Weight', line=dict(color='#DC2626', width=4, dash='dot')))
+fig.add_trace(go.Scatter(x=[wto_input], y=[res['we_required']], mode='markers', marker=dict(size=15, color='#10B981'), name='Your Design Point'))
 
-# Interaction Point Marker
-fig.add_trace(go.Scatter(x=[wto_var], y=[res['we_req']], mode='markers+text', name='Current Selection',
-                         marker=dict(size=12, color='#10B981'), text=["Design Point"], textposition="top center"))
-
-fig.update_layout(height=600, plot_bgcolor='white', hovermode='x unified',
-                  xaxis=dict(showgrid=True, gridcolor='#F1F5F9', title="Gross Weight (WTO) [lbs]"),
-                  yaxis=dict(showgrid=True, gridcolor='#F1F5F9', title="Empty Weight (WE) [lbs]"),
-                  legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+fig.update_layout(plot_bgcolor='white', hovermode='x unified', margin=dict(l=0,r=0,t=40,b=0))
+fig.update_xaxes(showgrid=True, gridcolor='#E2E8F0', title="WTO (lbs)")
+fig.update_yaxes(showgrid=True, gridcolor='#E2E8F0', title="WE (lbs)")
 st.plotly_chart(fig, use_container_width=True)
 
-# --- 6. UNIFIED PDF DOCUMENT GENERATOR ---
-def generate_master_pdf(data):
+# Row 3: Sensitivity Matrix
+st.subheader("📉 Sensitivity Matrix (dW/dX)")
+sc1, sc2 = st.columns(2)
+sc1.info(f"**Range Sensitivity (dW/dR):** {res['dw_dr']:.4f} lbs/mi")
+sc2.info(f"**SFC Sensitivity (dW/dCp):** {res['dw_dcp']:.2f} lbs/unit")
+
+# --- 5. THE MASTER PDF DOCUMENT (Professional Formatting) ---
+def generate_master_pdf(d):
     pdf = FPDF()
     pdf.add_page()
     
+    # Background and Border
+    pdf.set_draw_color(15, 23, 42)
+    pdf.rect(5, 5, 200, 287)
+    
     # Header
     pdf.set_fill_color(15, 23, 42)
-    pdf.rect(0, 0, 210, 40, 'F')
+    pdf.rect(5, 5, 200, 35, 'F')
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Arial", 'B', 20)
-    pdf.cell(0, 20, "AIRCRAFT DESIGN MASTER REPORT", ln=True, align='C')
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 5, "Generated via AeroOptimizer Pro | Precision Engineering Suite", ln=True, align='C')
+    pdf.cell(0, 15, "AIRCRAFT PRELIMINARY DESIGN DOCUMENT", ln=True, align='C')
+    pdf.set_font("Arial", 'I', 10)
+    pdf.cell(0, 10, "Technical Specification & Weight Convergence Analysis", ln=True, align='C')
     
+    # Body Text
     pdf.set_text_color(0, 0, 0)
-    pdf.ln(25)
+    pdf.ln(15)
     
-    # Section 1: Inputs
+    # SECTION 1: METHODOLOGY
     pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, "1. MISSION CONFIGURATION & INPUTS", ln=True)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.cell(0, 10, " 1. DESIGN METHODOLOGY", ln=True, fill=True)
     pdf.set_font("Arial", '', 11)
-    pdf.cell(95, 8, f"- Design Range: {rc} miles", ln=0)
-    pdf.cell(95, 8, f"- Passenger Count: {pax}", ln=1)
-    pdf.cell(95, 8, f"- Cruise L/D: {ld_c}", ln=0)
-    pdf.cell(95, 8, f"- SFC (Cp): {cp_c} lbs/hp/hr", ln=1)
+    pdf.multi_cell(0, 7, (
+        "This analysis follows the multidisciplinary design optimization (MDAO) process for fixed-wing aircraft. "
+        "The objective is to find the equilibrium point where the mission fuel requirements and structural "
+        "integrity constraints converge. We use the Breguet Range equation and statistical weight modeling "
+        "to validate the feasibility of the chosen Take-off Weight (WTO)."
+    ))
     pdf.ln(5)
     
-    # Section 2: Core Calculations
+    # SECTION 2: INPUT SUMMARY
     pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, "2. CORE CALCULATIONS & GROWTH FACTORS", ln=True)
+    pdf.cell(0, 10, " 2. INPUT CONFIGURATION", ln=True, fill=True)
     pdf.set_font("Arial", '', 11)
-    pdf.cell(95, 8, f"- Final Fuel Fraction (Mff): {data['mff']:.4f}", ln=0)
-    pdf.cell(95, 8, f"- Growth Factor (F): {data['f_growth']:,.2f}", ln=1)
-    pdf.cell(95, 8, f"- Efficiency Factor (C): {data['c_val']:.4f}", ln=0)
-    pdf.cell(95, 8, f"- Fixed Asset Weight (D): {d_fixed:,.1f} lbs", ln=1)
-    pdf.ln(5)
-
-    # Section 3: Convergence Analysis
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, "3. WEIGHT CONVERGENCE SUMMARY", ln=True)
-    pdf.set_font("Arial", '', 11)
-    pdf.cell(0, 8, f"Selected Take-off Weight: {wto_var:,.1f} lbs", ln=True)
-    pdf.cell(0, 8, f"Mission Required Empty Weight: {data['we_req']:,.1f} lbs", ln=True)
-    pdf.cell(0, 8, f"Structural Allowable Empty Weight: {data['we_allow']:,.1f} lbs", ln=True)
-    error = data['we_req'] - data['we_allow']
-    pdf.cell(0, 8, f"Convergence Error (Delta): {error:,.1f} lbs", ln=True)
+    col_w = 95
+    pdf.cell(col_w, 8, f"Selected WTO: {wto_input:,.1f} lbs", ln=0)
+    pdf.cell(col_w, 8, f"Design Range: {rc} miles", ln=1)
+    pdf.cell(col_w, 8, f"Passenger Count: {pax}", ln=0)
+    pdf.cell(col_w, 8, f"Fixed Weight (D): {d_val:,.1f} lbs", ln=1)
+    pdf.cell(col_w, 8, f"Cruise L/D: {ld_c}", ln=0)
+    pdf.cell(col_w, 8, f"Prop Efficiency: {np_c}", ln=1)
     pdf.ln(5)
     
-    # Section 4: Sensitivity Derivatives
+    # SECTION 3: WEIGHT CONVERGENCE & THE GRAPH
     pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, "4. DESIGN SENSITIVITY MATRIX", ln=True)
+    pdf.cell(0, 10, " 3. CONVERGENCE ANALYSIS & VISUALIZATION", ln=True, fill=True)
     pdf.set_font("Arial", '', 11)
-    pdf.cell(0, 8, f"- Weight Penalty per Mile (dW/dR): {data['dw_dr']:.4f} lbs/mi", ln=True)
-    pdf.cell(0, 8, f"- Weight Penalty per SFC Unit (dW/dCp): {data['dw_dcp']:.2f} lbs/unit", ln=True)
+    pdf.multi_cell(0, 7, (
+        "The Weight Equilibrium Chart (provided in the digital suite) illustrates two primary curves: "
+        "1. The 'Required WE' curve represents the mission's demand for fuel and payload. "
+        "2. The 'Allowable WE' curve represents the structural limits based on current aerospace materials. "
+        f"At your selected WTO ({wto_input:,.1f} lbs), the convergence error is {error:,.1f} lbs. "
+        "A successful design requires this error to be zero (the intersection point)."
+    ))
+    pdf.ln(5)
+    
+    # SECTION 4: SENSITIVITY & GROWTH
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, " 4. GROWTH FACTOR & SENSITIVITY", ln=True, fill=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.multi_cell(0, 7, (
+        f"The Sensitivity Growth Factor (F = {res['f_growth']:.2f}) indicates how 'penalizing' weight additions are. "
+        f"Based on our derivatives, adding 1 mile of range increases WTO by {res['dw_dr']:.4f} lbs. "
+        "This data allows engineers to perform trade-off studies between mission performance and aircraft size."
+    ))
     
     return pdf.output(dest='S').encode('latin-1', 'ignore')
 
 st.divider()
-st.download_button("📥 DOWNLOAD COMPLETE MASTER REPORT (PDF)", 
+st.download_button("📥 DOWNLOAD COMPREHENSIVE DESIGN DOCUMENT (PDF)", 
                    data=generate_master_pdf(res), 
-                   file_name="Aircraft_Master_Design_Package.pdf")
+                   file_name="Aircraft_Master_Package.pdf")
