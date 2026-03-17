@@ -3,27 +3,14 @@ import math
 import numpy as np
 import pandas as pd
 import io
-import plotly.express as px
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
-from reportlab.lib.styles import getSampleStyleSheet
-import tempfile
 
 # ------------------ PAGE ------------------
-st.set_page_config(page_title="Aircraft Design Pro", layout="wide")
+st.set_page_config(page_title="Aircraft Design Tool", layout="wide")
 
-# ------------------ DARK UI ------------------
-st.markdown("""
-<style>
-body {background-color: #0e1117; color: white;}
-.block-container {padding: 2rem;}
-h1, h2, h3 {color: #00d4ff;}
-</style>
-""", unsafe_allow_html=True)
+st.title("✈️ Aircraft Design Tool")
+st.markdown("### Weight Estimation & Engineering Analysis")
 
-st.title("✈️ Aircraft Design Cockpit")
-st.markdown("### Engineering Weight Estimation & Analysis Tool")
-
-# ------------------ INPUTS ------------------
+# ------------------ SIDEBAR ------------------
 st.sidebar.header("⚙️ Inputs")
 
 passengers = st.sidebar.number_input("Passengers", value=34)
@@ -55,14 +42,22 @@ if st.button("🚀 Run Analysis"):
     # ------------------ RESULTS ------------------
     st.subheader("📊 Results")
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("WTO", f"{WTO:,.0f} lb")
-    col2.metric("Empty Weight", f"{WE:,.0f} lb")
-    col3.metric("Fuel Fraction", f"{Mff:.3f}")
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("WTO (lb)", f"{WTO:,.0f}")
+    col2.metric("Fuel (lb)", f"{WF:,.0f}")
+    col3.metric("Empty Weight (lb)", f"{WE:,.0f}")
+    col4.metric("Allowable WE (lb)", f"{WE_allow:,.0f}")
 
     st.markdown("---")
 
+    col5, col6 = st.columns(2)
+    col5.metric("Fuel Fraction", f"{Mff:.4f}")
+    col6.metric("Difference", f"{diff:.2f}")
+
     # ------------------ GRAPH 1 ------------------
+    st.subheader("📈 Effect of Range on Weight")
+
     ranges = np.linspace(200, 2000, 50)
     weights = []
 
@@ -73,45 +68,65 @@ if st.button("🚀 Run Analysis"):
         WE_temp = WTO - WF_temp - payload - crew - att
         weights.append(WE_temp)
 
-    df = pd.DataFrame({"Range": ranges, "Weight": weights})
+    df = pd.DataFrame({
+        "Range (mile)": ranges,
+        "Empty Weight (lb)": weights
+    })
 
-    fig1 = px.line(df, x="Range", y="Weight",
-                   title="Effect of Range on Weight",
-                   labels={"Range": "Range (mile)", "Weight": "Empty Weight (lb)"})
+    st.line_chart(df.set_index("Range (mile)"))
 
-    st.plotly_chart(fig1, use_container_width=True)
+    st.caption("X-axis: Range (mile) | Y-axis: Empty Weight (lb)")
 
-    # ------------------ CONTOUR ------------------
-    st.subheader("🎯 Contour Plot (L/D vs Range)")
+    # ------------------ GRAPH 2 ------------------
+    st.subheader("📈 Sensitivity to L/D")
 
-    LD_vals = np.linspace(8, 20, 30)
-    R_vals = np.linspace(200, 2000, 30)
-
-    Z = []
+    LD_vals = np.linspace(8, 20, 40)
+    WTO_vals = []
 
     for ld in LD_vals:
-        row = []
-        for r in R_vals:
+        W5_W4 = 1 / math.exp(Rc / (375 * (np_eff / Cp) * ld))
+        Mff_temp = 0.99*0.995*0.995*0.985*W5_W4*0.97*0.985*0.995
+
+        WTO_temp = WTO
+        for _ in range(20):
+            WF_temp = WTO_temp * (1 - Mff_temp)
+            WE_temp = WTO_temp - WF_temp - payload - crew - att
+            WE_allow_temp = 10 ** ((math.log10(WTO_temp) - A) / B)
+            WTO_temp += (WE_allow_temp - WE_temp) * 0.5
+
+        WTO_vals.append(WTO_temp)
+
+    df2 = pd.DataFrame({
+        "L/D": LD_vals,
+        "WTO (lb)": WTO_vals
+    })
+
+    st.line_chart(df2.set_index("L/D"))
+
+    st.caption("X-axis: L/D | Y-axis: Takeoff Weight (lb)")
+
+    # ------------------ CONTOUR (بديل بسيط) ------------------
+    st.subheader("🎯 Sensitivity Table (بدل Contour)")
+
+    table_data = []
+
+    for ld in [10, 12, 14, 16, 18]:
+        for r in [500, 1000, 1500]:
             W5_W4 = 1 / math.exp(r / (375 * (np_eff / Cp) * ld))
             Mff_temp = 0.99*0.995*0.995*0.985*W5_W4*0.97*0.985*0.995
             WTO_temp = WTO * (1 - Mff_temp)
-            row.append(WTO_temp)
-        Z.append(row)
+            table_data.append([ld, r, round(WTO_temp, 0)])
 
-    fig2 = px.imshow(
-        Z,
-        x=R_vals,
-        y=LD_vals,
-        labels=dict(x="Range (mile)", y="L/D", color="WTO"),
-        title="Sensitivity Contour"
-    )
-
-    st.plotly_chart(fig2, use_container_width=True)
+    df3 = pd.DataFrame(table_data, columns=["L/D", "Range", "WTO"])
+    st.dataframe(df3)
 
     # ------------------ PDF ------------------
-    st.subheader("📄 Generate Engineering Report")
+    st.subheader("📄 Export Report")
 
     if st.button("Generate PDF"):
+
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer)
@@ -120,31 +135,27 @@ if st.button("🚀 Run Analysis"):
         content = []
 
         content.append(Paragraph("Aircraft Design Report", styles["Title"]))
-        content.append(Spacer(1, 12))
-
-        content.append(Paragraph(f"""
-        This report summarizes the aircraft preliminary design analysis.
-        The calculated takeoff weight (WTO) reflects the balance between payload,
-        fuel requirements, and structural weight estimation.
-        """, styles["Normal"]))
-
         content.append(Spacer(1, 10))
 
+        content.append(Paragraph(
+            "This report presents preliminary aircraft weight estimation results. "
+            "The analysis evaluates how mission parameters affect total and empty weight.",
+            styles["Normal"]
+        ))
+
+        content.append(Spacer(1, 10))
         content.append(Paragraph(f"WTO: {WTO:.2f} lb", styles["Normal"]))
         content.append(Paragraph(f"Empty Weight: {WE:.2f} lb", styles["Normal"]))
-        content.append(Paragraph(f"Fuel Fraction: {Mff:.3f}", styles["Normal"]))
-
-        # Save graph as image
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-        fig1.write_image(tmp.name)
-
-        content.append(Spacer(1, 10))
-        content.append(Paragraph("Range vs Weight Graph:", styles["Heading2"]))
-        content.append(Image(tmp.name, width=400, height=250))
+        content.append(Paragraph(f"Fuel Fraction: {Mff:.4f}", styles["Normal"]))
 
         doc.build(content)
 
-        st.download_button("📥 Download PDF", buffer.getvalue(), "report.pdf")
+        st.download_button(
+            "📥 Download PDF",
+            buffer.getvalue(),
+            file_name="report.pdf",
+            mime="application/pdf"
+        )
 
 else:
-    st.info("Enter inputs and run analysis")
+    st.info("👈 Enter inputs and click Run Analysis")
