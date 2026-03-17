@@ -400,7 +400,6 @@ with tab1:
             marker=dict(
                 color=fracs,
                 colorscale=[[0,'#8A2BE2'],[0.5,'#00D4FF'],[1,'#00FF88']],
-                line=dict(color='#00D4FF40', width=1)
             ),
             name='W_i / W_{i-1}',
             text=[f'{v:.4f}' for v in fracs],
