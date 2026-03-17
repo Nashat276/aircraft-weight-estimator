@@ -253,7 +253,19 @@ div.stDownloadButton > button:hover { background: #1B2B4B !important; }
     border-radius: 8px !important;
 }
 
-/* ─── INSIGHT BOX ─── */
+/* ─── CALCULATE BUTTON ─── */
+[data-testid="stSidebar"] div.stButton > button {
+    background: linear-gradient(135deg, #0369A1, #0EA5E9) !important;
+    color: #fff !important; border: none !important;
+    border-radius: 9px !important;
+    font-size: 0.85rem !important; font-weight: 600 !important;
+    padding: 0.65rem 1rem !important; width: 100% !important;
+    letter-spacing: 0.04em !important;
+    box-shadow: 0 2px 8px rgba(14,165,233,0.35) !important;
+}
+[data-testid="stSidebar"] div.stButton > button:hover {
+    background: linear-gradient(135deg, #0284C7, #38BDF8) !important;
+}
 .insight {
     background: linear-gradient(135deg, #EFF8FF, #F0FDF4);
     border: 1px solid #BAE6FD;
@@ -391,17 +403,24 @@ with st.sidebar:
     A_v   = st.number_input("Regression constant A", min_value=0.0, max_value=2.0, value=D['A'], step=0.001, format="%.4f")
     B_v   = st.number_input("Regression constant B", min_value=0.1, max_value=2.0, value=D['B'], step=0.001, format="%.4f")
     Mtfo  = st.number_input("Trapped fuel fraction M_tfo", min_value=0.0, max_value=0.05, value=D['Mtfo'], step=0.001, format="%.3f")
-    Wto_g = st.number_input("Initial W_TO guess (lbs)", min_value=5000, max_value=500000, value=D['Wto_init'], step=1000)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    calculate = st.button("⟳  Calculate", use_container_width=True, type="primary")
 
 P = dict(npax=int(npax),wpax=float(wpax),wbag=float(wbag),
          ncrew=int(ncrew),natt=int(natt),
          Mtfo=float(Mtfo),Mr=0.0,R=float(R_nm),
          Vl=float(Vl),LDc=float(LDc),Cpc=float(Cpc),npc=float(npc),
          El=float(El),LDl=float(LDl),Cpl=float(Cpl),npl=float(npl),
-         A=float(A_v),B=float(B_v),Wto=float(Wto_g))
+         A=float(A_v),B=float(B_v),Wto=48550)
 
-Wto, RR = solve(P)
-S = sens(P, Wto)
+# Use session_state to cache results — only recalculate when button pressed
+if 'results' not in st.session_state or calculate:
+    Wto, RR = solve(P)
+    S = sens(P, Wto)
+    st.session_state['results'] = (Wto, RR, S)
+else:
+    Wto, RR, S = st.session_state['results']
 conv = abs(RR['diff']) < 5
 WE=RR['WE']; WOE=RR['WOE']; WF=RR['WF']
 Wpl=RR['Wpl']; Wcrew=RR['Wcrew']; Wtfo=RR['Wtfo']
@@ -409,26 +428,21 @@ Wpl=RR['Wpl']; Wcrew=RR['Wcrew']; Wtfo=RR['Wtfo']
 # ═══════════════ HERO BANNER ═══════════════
 st.markdown(f"""
 <div class="hero">
-  <div class="hero-grid">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1.5rem;flex-wrap:wrap">
     <div>
       <div class="hero-title">AERO<span>SIZER</span> PRO</div>
-      <div class="hero-subtitle">Preliminary Aircraft Weight Estimation Tool · v2025</div>
-      <div class="hero-desc">
-        A professional sizing tool based on the <b style="color:#fff">Breguet Range &amp; Endurance equations</b>
-        for propeller-driven aircraft. Uses mission-segment weight fractions and historical
-        empty-weight regression to iteratively solve for gross takeoff weight <b style="color:#38BDF8">W_TO</b>.
-        Follows Raymer (2018) and Roskam Part I methodology — used in preliminary design phases
-        at major aerospace OEMs.
+      <div class="hero-subtitle" style="margin-bottom:0.7rem">Preliminary Aircraft Weight Estimation · Breguet Method · Propeller-Driven Aircraft</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div class="hero-badge">Raymer (2018)</div>
+        <div class="hero-badge">Roskam Pt. I</div>
+        <div class="hero-badge">Breguet Eq. 2.9 / 2.11</div>
+        <div class="hero-badge">Propeller Aircraft</div>
       </div>
     </div>
-    <div class="hero-meta">
-      <div class="hero-badge">Raymer (2018) / Roskam Pt.I</div>
-      <div class="hero-badge">Breguet Method</div>
-      <div class="hero-badge">Propeller-Driven Aircraft</div>
-      <div style="margin-top:8px; text-align:right">
-        <div class="hero-stat-v">W_TO = {Wto:,.0f}</div>
-        <div class="hero-stat-l">lbs · Current result</div>
-      </div>
+    <div style="text-align:right;flex-shrink:0">
+      <div style="font-family:'DM Mono',monospace;font-size:0.65rem;color:#64748B;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.3rem">Current W_TO</div>
+      <div style="font-family:'DM Mono',monospace;font-size:2rem;font-weight:600;color:#38BDF8;line-height:1">{Wto:,.0f}</div>
+      <div style="font-family:'DM Mono',monospace;font-size:0.65rem;color:#64748B;letter-spacing:0.1em">lbs</div>
     </div>
   </div>
 </div>
@@ -846,101 +860,115 @@ The PDF report includes:<br>
             buf=io.BytesIO()
             doc=SimpleDocTemplate(buf,pagesize=A4,
                 leftMargin=2*cm,rightMargin=2*cm,topMargin=2*cm,bottomMargin=2*cm)
+            PAGE_W = 17*cm  # usable width on A4
             sty=getSampleStyleSheet()
             def ps(nm,**kw): return ParagraphStyle(nm,parent=sty['Normal'],**kw)
-            sT  =ps('T',fontSize=20,fontName='Helvetica-Bold',
-                      textColor=colors.HexColor('#0D1B2A'),spaceAfter=3)
-            sSub=ps('S',fontSize=8.5,textColor=colors.HexColor('#64748B'),spaceAfter=14)
-            sH  =ps('H',fontSize=10.5,fontName='Helvetica-Bold',
-                      textColor=colors.HexColor('#0369A1'),spaceBefore=14,spaceAfter=5)
-            sB  =ps('B',fontSize=8.5,leading=13.5,textColor=colors.HexColor('#374151'))
-            sBold=ps('BB',fontSize=8.5,fontName='Helvetica-Bold',leading=13,
-                      textColor=colors.HexColor('#0D1B2A'))
+            sT  =ps('T',fontSize=18,fontName='Helvetica-Bold',
+                      textColor=colors.HexColor('#0D1B2A'),spaceAfter=2)
+            sSub=ps('S',fontSize=8,textColor=colors.HexColor('#64748B'),spaceAfter=10)
+            sH  =ps('H',fontSize=10,fontName='Helvetica-Bold',
+                      textColor=colors.HexColor('#0369A1'),spaceBefore=12,spaceAfter=4)
+            sB  =ps('B',fontSize=8,leading=12,textColor=colors.HexColor('#374151'))
             ts=TableStyle([
                 ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#0D1B2A')),
                 ('TEXTCOLOR',(0,0),(-1,0),colors.white),
                 ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
                 ('FONTNAME',(0,1),(-1,-1),'Helvetica'),
-                ('FONTSIZE',(0,0),(-1,-1),8),
+                ('FONTSIZE',(0,0),(-1,-1),7.5),
                 ('GRID',(0,0),(-1,-1),0.3,colors.HexColor('#CBD5E1')),
                 ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#F8FAFC')]),
-                ('LEFTPADDING',(0,0),(-1,-1),5),
-                ('RIGHTPADDING',(0,0),(-1,-1),5),
-                ('TOPPADDING',(0,0),(-1,-1),3.5),
-                ('BOTTOMPADDING',(0,0),(-1,-1),3.5),
+                ('LEFTPADDING',(0,0),(-1,-1),4),
+                ('RIGHTPADDING',(0,0),(-1,-1),4),
+                ('TOPPADDING',(0,0),(-1,-1),3),
+                ('BOTTOMPADDING',(0,0),(-1,-1),3),
             ])
             story=[
-                Paragraph("AeroSizer Pro",sT),
-                Paragraph("Preliminary Aircraft Weight Estimation · Breguet Range/Endurance Method · Propeller-Driven Aircraft",sSub),
+                Paragraph("AeroSizer Pro — Mission Report",sT),
+                Paragraph("Preliminary Aircraft Weight Estimation · Breguet Method · Propeller-Driven Aircraft",sSub),
                 HRFlowable(width="100%",thickness=1.5,color=colors.HexColor('#38BDF8')),
-                Spacer(1,.3*cm),
-                Paragraph("1.  Methodology Overview",sH),
-                Paragraph("This report was generated using the iterative Breguet weight fraction method "
-                           "(Raymer, 2018, Ch. 2). The gross takeoff weight W_TO is found by solving: "
-                           "W_TO = (W_payload + W_crew) / (1 - Mff - Mtfo - We/Wto_regression). "
-                           "Mission fuel fraction Mff is the product of all phase weight fractions Wi/Wi-1. "
-                           "Cruise and loiter fractions are computed from Breguet Eq. 2.9 and Eq. 2.11. "
-                           "All other phases use fixed values from Raymer Table 2.1. "
-                           "Empty weight regression: log10(WE) = A + B·log10(WTO) (Raymer Table 2.2).",sB),
-                Spacer(1,.2*cm),
-                Paragraph("2.  Mission Inputs",sH),
+                Spacer(1,.25*cm),
+                Paragraph("1. Methodology",sH),
+                Paragraph("Iterative Breguet weight fraction method (Raymer 2018, Ch.2). "
+                          "W_TO is found by bisection where W_E_tentative = W_E_regression. "
+                          "Mff = product of all phase fractions Wi/Wi-1. "
+                          "Cruise (Eq.2.9) and loiter (Eq.2.11) fractions are computed from inputs. "
+                          "Other phases use fixed values (Raymer Table 2.1). "
+                          "Regression: log10(WE) = A + B*log10(WTO) (Raymer Table 2.2).",sB),
+                Spacer(1,.15*cm),
+                Paragraph("2. Mission Inputs",sH),
             ]
-            t1=Table([['Parameter','Value','Parameter','Value'],
-                ['Passengers',str(npax),'Design range (nm)',str(R_nm)],
-                ['Pax wt (lbs)',str(wpax),'Loiter endurance (hr)',f'{El:.2f}'],
-                ['Baggage (lbs)',str(wbag),'Cruise L/D',f'{LDc:.1f}'],
-                ['Flight crew',str(ncrew),'Loiter L/D',f'{LDl:.1f}'],
-                ['Cabin att.',str(natt),'Cruise SFC Cp',f'{Cpc:.2f}'],
-                ['A (regr.)',f'{A_v:.4f}','Loiter SFC Cp',f'{Cpl:.2f}'],
-                ['B (regr.)',f'{B_v:.4f}','Cruise η_p',f'{npc:.2f}'],
-                ['M_tfo',f'{Mtfo:.3f}','Loiter η_p',f'{npl:.2f}']],
-                colWidths=[4.2*cm,2.8*cm,4.2*cm,2.8*cm])
+            # 4-column inputs table with equal widths
+            CW4 = [4.0*cm, 2.5*cm, 4.0*cm, 2.5*cm]
+            t1=Table([
+                ['Parameter','Value','Parameter','Value'],
+                ['Passengers',str(int(npax)),'Range (nm)',str(int(R_nm))],
+                ['Pax wt (lbs)',str(int(wpax)),'Loiter endur. (hr)',f'{float(El):.2f}'],
+                ['Baggage (lbs)',str(int(wbag)),'Cruise L/D',f'{float(LDc):.1f}'],
+                ['Flight crew',str(int(ncrew)),'Loiter L/D',f'{float(LDl):.1f}'],
+                ['Cabin att.',str(int(natt)),'Cruise Cp',f'{float(Cpc):.2f}'],
+                ['A',f'{float(A_v):.4f}','Loiter Cp',f'{float(Cpl):.2f}'],
+                ['B',f'{float(B_v):.4f}','Cruise eta_p',f'{float(npc):.2f}'],
+                ['M_tfo',f'{float(Mtfo):.3f}','Loiter eta_p',f'{float(npl):.2f}']],
+                colWidths=CW4)
             t1.setStyle(ts)
-            story+=[t1,Spacer(1,.2*cm)]
-            story.append(Paragraph("3.  Sizing Result & Convergence",sH))
-            status_str='CONVERGED ✓' if conv else 'NOT CONVERGED ✗'
+            story+=[t1,Spacer(1,.15*cm)]
+
+            story.append(Paragraph("3. Sizing Result",sH))
+            status_str='CONVERGED' if conv else 'NOT CONVERGED'
             story.append(Paragraph(
-                f"W_TO = <b>{Wto:,.0f} lbs</b> · Mff = {RR['Mff']:.5f} · "
-                f"ΔWE = {RR['diff']:+.1f} lbs · {status_str}",sB))
-            story+=[Spacer(1,.15*cm),Paragraph("4.  Complete Weight Statement",sH)]
+                f"W_TO = {Wto:,.0f} lbs   |   Mff = {RR['Mff']:.5f}   |   "
+                f"dWE = {RR['diff']:+.1f} lbs   |   {status_str}",sB))
+            story+=[Spacer(1,.12*cm)]
+
+            story.append(Paragraph("4. Weight Statement",sH))
+            CW4b = [8.0*cm, 2.5*cm, 2.5*cm, 2.5*cm]
             t2=Table([['Component','lbs','Fraction','% W_TO']]+
                 list(zip(summary['Component'],summary['lbs'],
                           summary['Fraction'],summary['% W_TO'])),
-                colWidths=[7.5*cm,2.5*cm,2.5*cm,1.5*cm])
+                colWidths=CW4b)
             t2.setStyle(ts)
-            story+=[t2,Spacer(1,.15*cm)]
-            story.append(Paragraph("5.  Phase Weight Fractions",sH))
+            story+=[t2,Spacer(1,.12*cm)]
+
+            story.append(Paragraph("5. Phase Weight Fractions",sH))
+            CW3 = [5.5*cm, 3*cm, 5*cm]
             t3=Table([['Phase','Wi / Wi-1','Reference']]+
                 list(zip(list(RR['fracs'].keys()),
                           [f"{v:.5f}" for v in RR['fracs'].values()],
-                          ['T2.1','T2.1','T2.1','Fig2.2','Eq2.9','Eq2.11','T2.1','T2.1'])),
-                colWidths=[5*cm,3*cm,4*cm])
+                          ['Raymer T2.1','Raymer T2.1','Raymer T2.1',
+                           'Raymer Fig2.2','Breguet Eq2.9','Breguet Eq2.11',
+                           'Raymer T2.1','Raymer T2.1'])),
+                colWidths=CW3)
             t3.setStyle(ts)
-            story+=[t3,Spacer(1,.1*cm)]
-            story.append(Paragraph("6.  Key Design Ratios",sH))
+            story+=[t3,Spacer(1,.12*cm)]
+
+            story.append(Paragraph("6. Key Design Ratios",sH))
+            CW3b = [7*cm, 3*cm, 4.5*cm]
             t_r=Table([['Ratio','Value','Typical Range'],
-                ['W_PL / W_TO (payload efficiency)',f"{Wpl/Wto:.4f}",'0.10–0.25'],
-                ['W_F / W_TO (fuel fraction)',f"{WF/Wto:.4f}",'0.20–0.45'],
-                ['W_E / W_TO (empty fraction)',f"{WE/Wto:.4f}",'0.45–0.65'],
-                ['W_PL / W_E (commercial eff.)',f"{Wpl/WE:.4f}",'0.15–0.40']],
-                colWidths=[6*cm,2.5*cm,3.5*cm])
+                ['W_PL / W_TO',f"{Wpl/Wto:.4f}",'0.10 – 0.25'],
+                ['W_F / W_TO', f"{WF/Wto:.4f}", '0.20 – 0.45'],
+                ['W_E / W_TO', f"{WE/Wto:.4f}", '0.45 – 0.65'],
+                ['W_PL / W_E', f"{Wpl/WE:.4f}", '0.15 – 0.40']],
+                colWidths=CW3b)
             t_r.setStyle(ts)
-            story+=[t_r,Spacer(1,.15*cm)]
-            story.append(Paragraph("7.  Sensitivity Partials (Breguet Table 2.20)",sH))
+            story+=[t_r,Spacer(1,.12*cm)]
+
+            story.append(Paragraph("7. Sensitivity Partials",sH))
             all_p=(list(zip(sdr['Partial'],sdr['Value'],sdr['Units'],sdr['Eq.']))+
                    list(zip(sdl['Partial'],sdl['Value'],sdl['Units'],sdl['Eq.'])))
-            t4=Table([['Partial','Value','Units','Eq.']]+all_p,
-                colWidths=[5*cm,2.5*cm,3.5*cm,1*cm])
+            CW4c = [5*cm, 2.5*cm, 5*cm, 1.5*cm]
+            t4=Table([['Partial','Value','Units','Eq.']]+all_p, colWidths=CW4c)
             t4.setStyle(ts)
-            story+=[t4,Spacer(1,.15*cm)]
-            story.append(Paragraph("8.  References & Bibliography",sH))
-            refs=[
-                ['[1]','Raymer, D.P. (2018). Aircraft Design: A Conceptual Approach, 6th Ed. AIAA Education Series.'],
-                ['[2]','Roskam, J. (2003). Airplane Design, Part I. DAR Corporation, Lawrence, KS.'],
-                ['[3]','Breguet, L. (1923). Calcul du Poids de Combustible Consommé par un Avion. Comptes Rendus.'],
-                ['[4]','Nicolai, L.M. & Carichner, G.E. (2010). Fundamentals of Aircraft and Airship Design. AIAA.'],
+            story+=[t4,Spacer(1,.12*cm)]
+
+            story.append(Paragraph("8. References",sH))
+            CW2 = [1.2*cm, PAGE_W-1.2*cm]
+            refs_data=[
+                ['[1]','Raymer, D.P. (2018). Aircraft Design: A Conceptual Approach, 6th Ed. AIAA.'],
+                ['[2]','Roskam, J. (2003). Airplane Design, Part I. DAR Corporation.'],
+                ['[3]','Breguet, L. (1923). Calcul du Poids de Combustible. Comptes Rendus.'],
+                ['[4]','Nicolai & Carichner (2010). Fundamentals of Aircraft Design. AIAA.'],
             ]
-            t5=Table([['Ref.','Citation']]+refs,colWidths=[1.2*cm,12.8*cm])
+            t5=Table([['Ref.','Citation']]+refs_data, colWidths=CW2)
             t5.setStyle(ts)
             story.append(t5)
             doc.build(story); buf.seek(0); return buf.read()
