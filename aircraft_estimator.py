@@ -4,87 +4,92 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 
-# إعدادات الصفحة
+# إعدادات الواجهة
 st.set_page_config(page_title="Aircraft Design Pro", layout="wide")
+st.title("✈️ Aircraft Design Weight Analysis")
 
-st.title("✈️ Aircraft Design Cockpit")
-st.markdown("### Engineering Analysis (Based on Homework 2.8)")
+# --- المدخلات من ملف الواجب ---
+st.sidebar.header("⚙️ Mission Parameters")
 
-# --- Sidebar Inputs ---
-st.sidebar.header("⚙️ Mission Specifications")
+# ثابت من Source 2 & 3
+W_pl = 6970.0      # Payload 
+W_crew = 615.0     # Crew weight [cite: 2]
+W_tfo = 242.75     # Trapped Fuel & Oil [cite: 2]
+R_c = 1265.847     # Range in statute miles [cite: 2]
+LD_cruise = 13.0   # L/D Cruise [cite: 2]
+Cp_cruise = 0.6    # Cp cruise [cite: 2]
+np_cruise = 0.85   # Efficiency cruise [cite: 2]
 
-# بيانات الركاب بناءً على المصدر [Source 2]
-passengers = st.sidebar.number_input("Passengers", value=34)
-w_crew = 615 # lbs 
-w_tfo = 242.75 # lbs 
-w_payload = passengers * (175 + 30) # 175 lbs weight + 30 lbs baggage 
-
-# بيانات الرحلة [Source 2]
-rc_miles = st.sidebar.number_input("Range (statute miles)", value=1265.8)
-ld_cruise = st.sidebar.number_input("L/D (Cruise)", value=13.0)
-cp_cruise = st.sidebar.number_input("Cp (lbs/Hp/Hr)", value=0.6)
-np_eff = st.sidebar.number_input("ηp (Propeller Efficiency)", value=0.85)
-
-# الثوابت الإحصائية A و B [Source 2]
-coeff_a = 0.3774
-coeff_b = 0.9647
+# الثوابت الإحصائية [cite: 2]
+coeff_A = 0.3774
+coeff_B = 0.9647
 
 wto_guess = st.sidebar.number_input("WTO Guess (lbs)", value=48550.0)
 
-# --- Calculation Engine ---
-def run_analysis(wto):
-    # Fuel Fractions (Step 3) [Source 3]
-    f1, f2, f3, f4 = 0.990, 0.995, 0.995, 0.985 
+# --- محرك الحسابات الدقيق ---
+def perform_analysis(wto):
+    # مراحل الوقود بناءً على Step 3 
+    f1 = 0.990  # Engine Start
+    f2 = 0.995  # Taxi
+    f3 = 0.995  # Take-off
+    f4 = 0.985  # Climb
     
-    # Cruise Equation 2.9 [Source 3]
-    f_cruise = 1 / math.exp(rc_miles / (375 * (np_eff / cp_cruise) * ld_cruise))
+    # Cruise Phase (W5/W4) 
+    # Equation: 1 / exp(Rc / (375 * (np/Cp) * (L/D)))
+    denominator = 375 * (np_cruise / Cp_cruise) * LD_cruise
+    f5 = 1 / math.exp(R_c / denominator) # النتيجة يجب أن تكون 0.833 
     
-    # Loiter & Landing [Source 3]
-    f6, f7, f8 = 0.970, 0.985, 0.995
+    f6 = 0.970  # Loiter 
+    f7 = 0.985  # Descent 
+    f8 = 0.995  # Landing 
     
-    mff = f1 * f2 * f3 * f4 * f_cruise * f6 * f7 * f8
-    wf = wto * (1 - mff)
+    # Total Fuel Fraction (Mff)
+    mff = f1 * f2 * f3 * f4 * f5 * f6 * f7 * f8 # النتيجة 0.764 
     
-    # WE Tentative (Step 5) [Source 3]
-    we_calc = wto - wf - w_payload - w_tfo - w_crew
+    wf = wto * (1 - mff) # Fuel weight
     
-    # WE Allowable (Step 6) [Source 3]
-    we_allow = 10**((math.log10(wto) - coeff_a) / coeff_b)
+    # Step 5: Tentative Empty Weight 
+    we_tent = wto - wf - W_pl - W_tfo - W_crew # النتيجة 29272.8 
     
-    return mff, wf, we_calc, we_allow
+    # Step 6: Allowable Empty Weight 
+    # Equation: invLog[(log(Wto)-A)/B]
+    we_allow = 10**((math.log10(wto) - coeff_a) / coeff_b) # النتيجة 29272.18 
+    
+    return mff, wf, we_tent, we_allow
 
-# --- Results Interface ---
-if st.button("🚀 Run Analysis"):
-    mff, wf, we_calc, we_allow = run_analysis(wto_guess)
-    diff = we_calc - we_allow
+# --- عرض النتائج ---
+if st.button("🚀 Calculate"):
+    mff, wf, we_calc, we_allow = perform_analysis(wto_guess)
+    error = we_calc - we_allow
 
-    st.subheader("📊 Weight Summary")
+    st.subheader("📊 Calculation Results")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Mff (Fuel Fraction)", f"{mff:.3f}")
+    col2.metric("Fuel Weight (WF)", f"{wf:,.1f} lbs")
+    col3.metric("Payload (Wpl)", f"{W_pl:,.0f} lbs")
+
+    st.markdown("---")
+    st.subheader("⚖️ Weight Matching (Step 6)")
     c1, c2, c3 = st.columns(3)
-    c1.metric("Fuel Fraction (Mff)", f"{mff:.4f}")
-    c2.metric("Fuel Weight (WF)", f"{wf:,.1f} lbs")
-    c3.metric("Payload Weight", f"{w_payload:,.1f} lbs")
+    c1.write(f"**Tentative WE:** {we_calc:,.2f} lbs")
+    c2.write(f"**Allowable WE:** {we_allow:,.2f} lbs")
+    c3.metric("Difference", f"{error:.2f} lbs", delta=error, delta_color="inverse")
 
-    st.subheader("⚖️ Weight Matching")
-    res1, res2, res3 = st.columns(3)
-    res1.write(f"**Calculated WE:** {we_calc:,.1f} lbs")
-    res2.write(f"**Allowable WE:** {we_allow:,.1f} lbs")
-    res3.metric("Difference", f"{diff:.2f} lbs", delta=diff, delta_color="inverse")
+    if abs(error) < 1.0:
+        st.success("✅ التقارب ممتاز! الوزن الإجمالي صحيح تماماً.")
+    else:
+        st.warning("⚠️ الفرق كبير، يرجى تعديل قيمة WTO Guess للوصول للتقارب.")
 
-    # --- Sensitivity Analysis Chart ---
-    st.divider()
-    st.subheader("📈 Range Sensitivity Analysis")
-    
-    ranges = np.linspace(500, 2500, 50)
-    # حساب الوزن الفارغ المطلوب لتغطية المدى المختلف
+    # الرسم البياني للحساسية (Range Sensitivity)
+    st.subheader("📈 Range Sensitivity")
+    ranges = np.linspace(500, 2000, 30)
+    # ملاحظة: في الرسم نثبت الـ WTO ونغير المدى لنرى تأثيره على الوزن الفارغ المتاح
     we_trend = []
     for r in ranges:
-        f_c = 1 / math.exp(r / (375 * (np_eff / cp_cruise) * ld_cruise))
-        mff_t = (0.99*0.995*0.995*0.985) * f_c * (0.97*0.985*0.995)
-        we_trend.append(wto_guess - (wto_guess * (1 - mff_t)) - w_payload - w_tfo - w_crew)
-
-    df = pd.DataFrame({"Range (miles)": ranges, "Tentative WE (lbs)": we_trend})
-    fig = px.line(df, x="Range (miles)", y="Tentative WE (lbs)", title="Empty Weight Trend vs Range")
+        f_c = 1 / math.exp(r / (375 * (np_cruise / Cp_cruise) * LD_cruise))
+        m_tmp = (0.99*0.995*0.995*0.985) * f_c * (0.970*0.985*0.995)
+        we_trend.append(wto_guess - (wto_guess*(1-m_tmp)) - W_pl - W_tfo - W_crew)
+    
+    df_plot = pd.DataFrame({"Range": ranges, "WE Tentative": we_trend})
+    fig = px.line(df_plot, x="Range", y="WE Tentative", title="How Range affects Empty Weight Margin")
     st.plotly_chart(fig, use_container_width=True)
-
-else:
-    st.info("👈 اضغط Run Analysis بعد التأكد من المدخلات")
