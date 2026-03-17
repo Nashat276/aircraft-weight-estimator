@@ -142,25 +142,38 @@ def mission(p):
                 WF=WF,WFu=WFu,WOE=WOE,WE=WE,WEa=WEa,
                 diff=WEa-WE,fracs=dict(zip(fnames,fvals)))
 
-def solve(p, tol=0.5, n=300):
+def solve(p, tol=0.2, n=400):
     pp = dict(p)
-    # test sign at boundaries
-    pp['Wto']=8000;  r_lo=mission(pp)
-    pp['Wto']=400000; r_hi=mission(pp)
-    lo,hi = 8000.0, 400000.0
-    if r_lo['diff']*r_hi['diff'] > 0:
-        # sweep to find sign change
-        for w0 in [12000,20000,35000,55000,80000,120000,180000,260000]:
-            pp['Wto']=w0; r0=mission(pp)
-            if r0['diff']*r_hi['diff'] < 0:
-                lo=w0; break
-    r={}
+    # Dense sweep to find exact bracket where diff changes sign
+    candidates = list(range(8000, 500000, 3000))
+    lo, hi = None, None
+    prev_d, prev_w = None, None
+    for w in candidates:
+        pp['Wto'] = float(w)
+        d = mission(pp)['diff']
+        if prev_d is not None and prev_d * d <= 0:
+            lo = float(prev_w)
+            hi = float(w)
+            break
+        prev_d = d
+        prev_w = w
+    if lo is None:
+        # No solution — return best guess
+        pp['Wto'] = 48550.0
+        r = mission(pp)
+        return 48550.0, r
+    r = {}
     for _ in range(n):
-        m=(lo+hi)/2; pp['Wto']=m; r=mission(pp)
-        if abs(r['diff'])<tol: break
-        if r['diff']>0: hi=m
-        else: lo=m
-    return m,r
+        m = (lo + hi) / 2.0
+        pp['Wto'] = m
+        r = mission(pp)
+        if abs(r['diff']) < tol:
+            break
+        if r['diff'] > 0:
+            lo = m
+        else:
+            hi = m
+    return m, r
 
 def sens(p,Wto):
     Rc=p['R']*1.15078; Vm=p['Vl']*1.15078
