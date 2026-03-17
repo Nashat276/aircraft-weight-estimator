@@ -4,207 +4,201 @@ import numpy as np
 import plotly.graph_objects as go
 from fpdf import FPDF
 
-# --- 1. RADICAL UI REDESIGN (AERO-MODERN) ---
-st.set_page_config(page_title="AeroOptimizer Pro | Sizing Suite", layout="wide")
+# --- 1. PRESTIGE UI DESIGN ---
+st.set_page_config(page_title="AeroOptimizer Ultra | Professional Sizing", layout="wide")
 
 st.markdown("""
     <style>
-    /* Dark Aero Theme */
-    .main { background-color: #0F172A; color: #F8FAFC; }
+    /* Dark Mode Global */
+    .main { background-color: #05070A; color: #E2E8F0; }
     
-    /* Sidebar Customization - Fixed Text Visibility */
+    /* Sidebar: High Contrast Glassmorphism */
     section[data-testid="stSidebar"] {
-        background-color: #1E293B !important;
-        border-right: 1px solid #334155;
+        background-color: #0D1117 !important;
+        border-right: 2px solid #1f6feb;
     }
-    section[data-testid="stSidebar"] label, section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] h1, section[data-testid="stSidebar"] h2 {
-        color: #38BDF8 !important; /* Sky Blue for clarity */
-        font-weight: 600 !important;
+    section[data-testid="stSidebar"] .stMarkdown p, section[data-testid="stSidebar"] label {
+        color: #58A6FF !important; /* Cyber Blue */
+        font-size: 15px !important;
+        font-weight: 700 !important;
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }
     
-    /* Input Boxes */
-    .stNumberInput input {
-        background-color: #0F172A !important;
-        color: #F8FAFC !important;
-        border: 1px solid #38BDF8 !important;
-    }
-
-    /* Professional Cards */
+    /* Metrics Styling */
     div[data-testid="stMetric"] {
-        background-color: #1E293B;
-        border: 1px solid #334155;
-        border-radius: 12px;
+        background: linear-gradient(145deg, #0d1117, #161b22);
+        border: 1px solid #30363d;
+        border-left: 5px solid #1f6feb;
+        border-radius: 10px;
         padding: 20px;
     }
     
-    h1, h2, h3 { color: #38BDF8; font-family: 'Inter', sans-serif; }
+    /* Buttons & Inputs */
+    .stNumberInput input {
+        background-color: #0D1117 !important;
+        color: #FFFFFF !important;
+        border: 1px solid #30363d !important;
+    }
+    
+    h1, h2, h3 { color: #58A6FF; font-family: 'Orbitron', sans-serif; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. SIDEBAR: DATA VAULT (Unified Inputs) ---
-st.sidebar.title("✈️ Design Control Center")
+# --- 2. SIDEBAR: THE ENGINEERING DASHBOARD ---
+st.sidebar.markdown("### 🛠️ Configuration")
 
 with st.sidebar:
-    st.header("📍 Primary Sizing Variable")
-    wto_input = st.number_input("Gross Weight (WTO) - lbs", value=48550.0, step=10.0)
+    st.markdown("---")
+    wto_input = st.number_input("Design WTO (lbs)", value=48550.0, step=10.0)
     
-    st.divider()
-    
-    with st.expander("📦 Payload & Weights", expanded=True):
-        pax = st.number_input("Passenger Count", value=34)
-        w_pax_total = pax * 205
-        w_crew = st.number_input("Crew Weight", value=615.0)
-        d_val = w_pax_total + w_crew # Calculated D Factor
+    with st.expander("📦 PAYLOAD & CREW", expanded=True):
+        pax = st.number_input("PAX Count", value=34)
+        w_pax_payload = pax * 205
+        w_crew = st.number_input("Crew Assets (lbs)", value=615.0)
+        d_val = w_pax_payload + w_crew
 
-    with st.expander("🚀 Cruise Phase (Table 2.20)", expanded=True):
-        rc = st.number_input("Range (Rc) - miles", value=1265.8)
-        ld_c = st.number_input("L/D (Cruise)", value=13.0)
-        cp_c = st.number_input("SFC (Cp)", value=0.6)
-        np_c = st.number_input("Prop Efficiency (ηp)", value=0.85)
+    with st.expander("🚀 CRUISE PARAMETERS", expanded=True):
+        rc = st.number_input("Range (mi)", value=1265.8)
+        ld_c = st.number_input("Cruise L/D", value=13.0)
+        cp_c = st.number_input("Cruise SFC (Cp)", value=0.6)
+        np_c = st.number_input("Prop ηp", value=0.85)
 
-    with st.expander("🛡️ Loiter & Reserves", expanded=False):
-        eltr = st.number_input("Endurance (E) - hrs", value=0.75)
-        ld_l = st.number_input("L/D (Loiter)", value=16.0)
-        cp_l = st.number_input("SFC (Loiter)", value=0.65)
-        m_res = st.number_input("Reserve Ratio", value=0.05)
+    with st.expander("🔄 LOITER & SAFETY", expanded=False):
+        eltr = st.number_input("Endurance (hrs)", value=0.75)
+        ld_l = st.number_input("Loiter L/D", value=16.0)
+        cp_l = st.number_input("Loiter SFC", value=0.65)
+        m_res = st.number_input("Reserves (Mres)", value=0.05)
         m_tfo = st.number_input("TFO Ratio", value=0.005)
 
-# --- 3. PHYSICS ENGINE (TABLE 2.20 ACCURACY) ---
-def compute_sizing(wto):
-    # Mission Fuel Fractions
-    f_start_climb = 0.990 * 0.995 * 0.995 * 0.985 
-    f_cruise = 1 / math.exp(rc / (375 * (np_c / cp_c) * ld_c))
-    f_loiter = 1 / math.exp(eltr / (375 * (0.80 / cp_l) * ld_l)) # ηp_loiter = 0.80
-    f_land = 0.985 * 0.995
-    mff = f_start_climb * f_cruise * f_loiter * f_land
+# --- 3. AEROSPACE PHYSICS ENGINE ---
+def run_solver(wto):
+    # Mission Profile Fractions
+    f_p = 0.990 * 0.995 * 0.995 * 0.985 
+    f_c = 1 / math.exp(rc / (375 * (np_c / cp_c) * ld_c))
+    f_l = 1 / math.exp(eltr / (375 * (0.80 / cp_l) * ld_l))
+    f_e = 0.985 * 0.995
+    mff = f_p * f_c * f_l * f_e
     
-    # Efficiency Factor (C) - Equation 2.22
+    # Matching Logic (Eq 2.22)
     c_val = 1 - (1 + m_res) * (1 - mff) - m_tfo
-    
-    # Weight Matching Logic
     wf = wto * (1 - mff)
     we_req = wto - wf - d_val - (m_tfo * wto)
     we_allow = 10**((math.log10(wto) - 0.3774) / 0.9647)
     
-    # Growth Factor (F) - Ref Table 2.20
-    # Calculates dWTO / dD (Sensitivity to Fixed Weight)
+    # Sensitivity (Table 2.20 Framework)
     num_f = -0.9647 * (wto**2) * (1 + m_res) * mff
     den_f = (c_val * wto * (1 - 0.9647)) - d_val
     f_growth = num_f / den_f if den_f != 0 else 0
     
-    # Sensitivity Derivatives (Eq 2.49 - 2.51)
+    # Sensitivity Derivatives
     dw_dr = (f_growth * cp_c) / (375 * np_c * ld_c)
     dw_dcp = (f_growth * rc) / (375 * np_c * ld_c)
     
-    # Returning all variables to avoid KeyError
-    return {
-        "mff": mff, "f_growth": f_growth, "c_val": c_val,
-        "we_req": we_req, "we_allow": we_allow, "wf": wf,
-        "dw_dr": dw_dr, "dw_dcp": dw_dcp, "d_val": d_val
-    }
+    return locals()
 
-# Execute calculation
-res = compute_sizing(wto_input)
+res = run_solver(wto_input)
 
-# --- 4. MAIN DASHBOARD ---
-st.title("🛡️ AeroOptimizer | Conceptual Design Suite")
-st.markdown("Professional Multidisciplinary Analysis (MDAO) for Aircraft Sizing")
+# --- 4. MAIN INTERFACE: AERO COMMAND CENTER ---
+st.title("✈️ AeroOptimizer Ultra")
+st.markdown("##### Sizing, Convergence & Sensitivity Analysis | JUST Engineering Standards")
 st.divider()
 
-# Top Metrics
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Mission Mff", f"{res['mff']:.4f}")
-m2.metric("Growth Factor (F)", f"{res['f_growth']:,.2f}")
-m3.metric("Current Error", f"{res['we_req'] - res['we_allow']:,.1f} lb")
-m4.metric("Efficiency (C)", f"{res['c_val']:.4f}")
+# High-Visibility Metrics
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Mission Fuel Fraction", f"{res['mff']:.4f}")
+c2.metric("Growth Factor (F)", f"{res['f_growth']:,.2f}")
+c3.metric("Efficiency (C)", f"{res['c_val']:.4f}")
+delta = res['we_req'] - res['we_allow']
+c4.metric("Convergence Delta", f"{delta:,.1f} lb", delta=delta, delta_color="inverse")
 
 st.divider()
 
-# Graphical Analysis
-col_plot, col_log = st.columns([2, 1])
+# Advanced Graphical Section
+col_map, col_stats = st.columns([2, 1])
 
-with col_plot:
-    st.subheader("📊 Convergence & Feasibility Map")
+with col_map:
+    st.subheader("🌐 Convergence Map")
     w_axis = np.linspace(35000, 75000, 100)
-    sweep = [compute_sizing(w) for w in w_axis]
+    sweep = [run_solver(w) for w in w_axis]
     
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=w_axis, y=[x['we_req'] for x in sweep], name='Mission Required Weight', line=dict(color='#38BDF8', width=4)))
-    fig.add_trace(go.Scatter(x=w_axis, y=[x['we_allow'] for x in sweep], name='Structural Limit', line=dict(color='#F87171', width=4, dash='dot')))
-    fig.add_trace(go.Scatter(x=[wto_input], y=[res['we_req']], mode='markers', marker=dict(size=15, color='#34D399'), name='Current Design'))
+    fig.add_trace(go.Scatter(x=w_axis, y=[x['we_req'] for x in sweep], name='Mission Required WE', line=dict(color='#1f6feb', width=4)))
+    fig.add_trace(go.Scatter(x=w_axis, y=[x['we_allow'] for x in sweep], name='Structural Allowable WE', line=dict(color='#f85149', width=4, dash='dot')))
+    fig.add_trace(go.Scatter(x=[wto_input], y=[res['we_req']], mode='markers', marker=dict(size=15, color='#3fb950', symbol='diamond'), name='Design Point'))
     
-    fig.update_layout(plot_bgcolor='#0F172A', paper_bgcolor='#0F172A', font_color='#F8FAFC', margin=dict(l=0,r=0,t=20,b=0))
-    fig.update_xaxes(showgrid=True, gridcolor='#334155')
-    fig.update_yaxes(showgrid=True, gridcolor='#334155')
+    fig.update_layout(plot_bgcolor='#0D1117', paper_bgcolor='#05070A', font_color='#8b949e', margin=dict(l=0,r=0,t=20,b=0))
+    fig.update_xaxes(showgrid=True, gridcolor='#30363d', title="Gross Weight (WTO) [lbs]")
+    fig.update_yaxes(showgrid=True, gridcolor='#30363d', title="Empty Weight (WE) [lbs]")
     st.plotly_chart(fig, use_container_width=True)
 
-with col_log:
+with col_stats:
     st.subheader("📑 Design Summary")
     st.write(f"**Payload Asset (D):** {res['d_val']:,.1f} lbs")
-    st.write(f"**Total Fuel Weight:** {res['wf']:,.1f} lbs")
-    st.info("Intersection point (where Error = 0) represents the technically optimal WTO.")
+    st.write(f"**Mission Fuel (Wf):** {res['wf']:,.1f} lbs")
+    st.info("Technical Convergence is achieved at the intersection of 'Required' and 'Allowable' curves.")
 
 st.divider()
 
 # Sensitivity Table 2.20
-st.subheader("📉 Design Sensitivity Matrix (Ref Table 2.20)")
-s1, s2 = st.columns(2)
-s1.metric("Range Penalty (dW/dR)", f"{res['dw_dr']:.4f} lbs/mi")
-s2.metric("SFC Penalty (dW/dCp)", f"{res['dw_dcp']:,.1f} lbs/unit")
+st.subheader("📉 Sensitivity Analysis (Table 2.20 Logic)")
+sc1, sc2 = st.columns(2)
+sc1.metric("Range Penalty (dW/dR)", f"{res['dw_dr']:.4f} lbs/mi")
+sc2.metric("Efficiency Penalty (dW/dCp)", f"{res['dw_dcp']:,.1f} lbs/unit")
 
-# --- 5. MASTER PDF REPORT (PRO FORMATTING) ---
-def generate_master_pdf(d):
+# --- 5. THE ULTIMATE PDF PACKAGE ---
+def generate_pdf(data):
     pdf = FPDF()
     pdf.add_page()
     
-    # Frame & Style
-    pdf.set_draw_color(56, 189, 248)
+    # Border
+    pdf.set_draw_color(31, 111, 235)
     pdf.rect(5, 5, 200, 287)
     
-    # Header
-    pdf.set_fill_color(30, 41, 59)
-    pdf.rect(5, 5, 200, 45, 'F')
+    # Professional Header
+    pdf.set_fill_color(13, 17, 23)
+    pdf.rect(5, 5, 200, 40, 'F')
     pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Arial", 'B', 22)
-    pdf.cell(0, 20, "AIRCRAFT MASTER DESIGN PACKAGE", ln=True, align='C')
-    pdf.set_font("Arial", 'I', 11)
-    pdf.cell(0, 10, "Technical Specification & Weight Convergence Report", ln=True, align='C')
+    pdf.set_font("Arial", 'B', 20)
+    pdf.cell(0, 20, "AIRCRAFT MASTER DESIGN REPORT", ln=True, align='C')
+    pdf.set_font("Arial", 'I', 10)
+    pdf.cell(0, 5, "Quantitative Sizing & Sensitivity Matrix | Ref: Table 2.20", ln=True, align='C')
     
     pdf.set_text_color(0, 0, 0)
     pdf.ln(25)
     
-    # Sections with Explanations
+    # Section 1: Philosophy
     pdf.set_font("Arial", 'B', 14)
     pdf.set_fill_color(241, 245, 249)
-    pdf.cell(0, 10, " 1. SYSTEM METHODOLOGY", ln=True, fill=True)
+    pdf.cell(0, 10, " 1. DESIGN METHODOLOGY", ln=True, fill=True)
     pdf.set_font("Arial", '', 11)
-    pdf.multi_cell(0, 7, (
-        "This sizing analysis utilizes the multidisciplinary iteration of Take-off Weight (WTO). "
-        "The process establishes equilibrium between mission-required empty weight (derived from fuel fractions) "
-        "and allowable structural empty weight (based on statistical log-models). This ensures the airframe "
-        "is both missions-capable and structurally sound."
-    ))
+    pdf.multi_cell(0, 7, "This report documents the iterative sizing of a fixed-wing aircraft. The methodology balances the Breguet Range requirements against structural weight statistics. The objective is to ensure that the required empty weight for the mission matches the structural capacity of the airframe.")
     
+    # Section 2: Input Matrix
     pdf.ln(5)
     pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, " 2. DESIGN CONFIGURATION & INPUTS", ln=True, fill=True)
+    pdf.cell(0, 10, " 2. CONFIGURATION INPUTS", ln=True, fill=True)
     pdf.set_font("Arial", '', 11)
-    pdf.cell(95, 8, f"- Analysis WTO: {wto_input:,.1f} lbs", ln=0)
-    pdf.cell(95, 8, f"- Design Range: {rc} miles", ln=1)
-    pdf.cell(95, 8, f"- Total Payload (D Factor): {d_val:,.1f} lbs", ln=0)
-    pdf.cell(95, 8, f"- Cruise L/D: {ld_c}", ln=1)
+    pdf.cell(95, 8, f"- Selected WTO: {wto_input:,.1f} lbs", ln=0)
+    pdf.cell(95, 8, f"- Target Range: {rc} miles", ln=1)
+    pdf.cell(95, 8, f"- Fixed Asset Weight (D): {d_val:,.1f} lbs", ln=0)
+    pdf.cell(95, 8, f"- L/D Cruise: {ld_c}", ln=1)
     
+    # Section 3: Performance Analysis
     pdf.ln(5)
     pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, " 3. SENSITIVITY DERIVATIVES (TABLE 2.20)", ln=True, fill=True)
+    pdf.cell(0, 10, " 3. PERFORMANCE & CONVERGENCE", ln=True, fill=True)
     pdf.set_font("Arial", '', 11)
-    pdf.multi_cell(0, 7, (
-        f"The calculated Growth Factor (F = {d['f_growth']:.2f}) represents the sensitivity of the entire airframe. "
-        f"Based on our sensitivity analysis, the range derivative (dW/dR) is {d['dw_dr']:.4f} lbs/mile, "
-        "which quantifies the weight penalty for extending the aircraft's mission profile."
-    ))
-
+    pdf.multi_cell(0, 7, f"At the current WTO, the Mission Fuel Fraction (Mff) is {data['mff']:.4f}. The matching process yields a structural error of {data['we_req'] - data['we_allow']:,.1f} lbs. A zero-delta intersection indicates a technically feasible design.")
+    
+    # Section 4: Sensitivity (Table 2.20)
+    pdf.ln(5)
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, " 4. SENSITIVITY DERIVATIVES", ln=True, fill=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.multi_cell(0, 7, f"The Growth Factor (F = {data['f_growth']:.2f}) defines the airframe's response to weight additions. Range sensitivity (dW/dR) is {data['dw_dr']:.4f} lbs/mi, while efficiency sensitivity (dW/dCp) is {data['dw_dcp']:.2f} lbs/unit.")
+    
     return pdf.output(dest='S').encode('latin-1', 'ignore')
 
 st.divider()
-st.download_button("📥 DOWNLOAD COMPREHENSIVE DESIGN DOCUMENT (PDF)", data=generate_master_pdf(res), file_name="Aero_Master_Report.pdf")
+st.download_button("📥 GENERATE MASTER DESIGN PACKAGE (PDF)", data=generate_pdf(res), file_name="Aero_Master_Design.pdf")
