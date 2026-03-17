@@ -3,155 +3,207 @@ import math
 import numpy as np
 import plotly.graph_objects as go
 from fpdf import FPDF
+from datetime import date
 
-# --- 1. PAGE CONFIGURATION (Clean Native Look) ---
-st.set_page_config(page_title="Aircraft Sizing Tool", layout="wide")
+# ==========================================
+# 1. إعدادات الصفحة (Clean Workspace)
+# ==========================================
+st.set_page_config(page_title="Aircraft Sizing | Thesis Edition", layout="wide")
 
-# --- 2. CORE SIZING SOLVER ---
-def calculate_sizing(wto_guess, range_mi, sfc, ld_cruise, pax, crew_wt):
-    # Fixed Parameters
-    m_res = 0.05
-    m_tfo = 0.005
-    eta_prop = 0.85
+st.markdown("""
+    <style>
+    .main { background-color: #FAFAFA; color: #1E1E1E; font-family: 'Arial', sans-serif; }
+    h1, h2, h3 { color: #003366; }
+    .stTabs [data-baseweb="tab-list"] { gap: 15px; }
+    .stTabs [data-baseweb="tab"] { font-weight: bold; font-size: 16px; padding: 10px; }
+    .stTabs [aria-selected="true"] { border-bottom: 3px solid #003366 !important; color: #003366 !important; }
+    div[data-testid="stMetric"] { background: #FFFFFF; border: 1px solid #E0E0E0; border-left: 4px solid #003366; padding: 15px; box-shadow: 1px 1px 5px rgba(0,0,0,0.05); }
+    </style>
+    """, unsafe_allow_html=True)
+
+# ==========================================
+# 2. المحرك الحسابي (Math & Equations)
+# ==========================================
+def calculate_sizing_and_sensitivity(wto, pax, crew, rc, ld_c, cp_c, np_c, m_res, m_tfo):
+    # 1. الأوزان الثابتة (Payload & Crew)
+    w_payload = pax * 205
+    d_val = w_payload + crew
     
-    # Payload Asset (D)
-    payload_wt = pax * 205
-    d_val = payload_wt + crew_wt
+    # 2. حساب أجزاء الوقود (Mission Fuel Fractions)
+    f_p = 0.990 * 0.995 * 0.995 * 0.985 # Engine start, taxi, takeoff, climb
+    f_c = math.exp(-rc / (375 * (np_c / cp_c) * ld_c)) # Cruise (Eq. 2.23 & 2.44)
+    f_l = 0.990 # Loiter/Descent assumed fraction
+    f_e = 0.985 * 0.995 # Landing
     
-    # Mission Fractions
-    f_startup = 0.980 # Combined start/taxi/takeoff/climb
-    f_cruise = 1 / math.exp(range_mi / (375 * (eta_prop / sfc) * ld_cruise))
-    f_loiter = 0.990 # Assumed fixed fraction for simplicity
-    f_land = 0.985
-    mff = f_startup * f_cruise * f_loiter * f_land
+    mff = f_p * f_c * f_l * f_e # Total Mission Fuel Fraction
     
-    # Weight Matching
-    wf = wto_guess * (1 - mff)
-    we_req = wto_guess - wf - d_val - (m_tfo * wto_guess)
-    we_allow = 10**((math.log10(wto_guess) - 0.3774) / 0.9647)
+    # 3. حساب الأوزان (Weight Matching)
+    wf = wto * (1 - mff) # Total Fuel Weight
+    we_req = wto - wf - d_val - (m_tfo * wto) # Required Empty Weight (Eq 2.22)
+    we_allow = 10**((math.log10(wto) - 0.3774) / 0.9647) # Statistical Allowable WE
     
-    # Sensitivity (Growth Factor F)
-    c_factor = 1 - (1 + m_res) * (1 - mff) - m_tfo
-    num_f = -0.9647 * (wto_guess**2) * (1 + m_res) * mff
-    den_f = (c_factor * wto_guess * (1 - 0.9647)) - d_val
+    # 4. معاملات الحساسية (Table 2.20 & Growth Factor F)
+    c_val = 1 - (1 + m_res) * (1 - mff) - m_tfo
+    num_f = -0.9647 * (wto**2) * (1 + m_res) * mff
+    den_f = (c_val * wto * (1 - 0.9647)) - d_val
     f_growth = num_f / den_f if den_f != 0 else 0
     
-    dw_dr = (f_growth * sfc) / (375 * eta_prop * ld_cruise)
-    dw_dcp = (f_growth * range_mi) / (375 * eta_prop * ld_cruise)
+    # Derivatives (Eq 2.49 etc)
+    dw_dr = (f_growth * cp_c) / (375 * np_c * ld_c)
+    dw_dcp = (f_growth * rc) / (375 * np_c * ld_c)
 
-    # Return comprehensive dictionary
     return {
-        "mff": mff, "f_growth": f_growth, "we_req": we_req, 
-        "we_allow": we_allow, "wf": wf, "d_val": d_val,
-        "dw_dr": dw_dr, "dw_dcp": dw_dcp, "wto": wto_guess
+        "wto": wto, "d_val": d_val, "wf": wf, 
+        "mff": mff, "f_c": f_c, 
+        "we_req": we_req, "we_allow": we_allow,
+        "f_growth": f_growth, "dw_dr": dw_dr, "dw_dcp": dw_dcp,
+        "m_res": m_res, "m_tfo": m_tfo
     }
 
-# --- 3. SIDEBAR: CLEAN INPUTS ---
-with st.sidebar:
-    st.header("Input Parameters")
-    
-    st.subheader("Weights")
-    wto_in = st.number_input("Design WTO (lbs)", min_value=10000.0, value=48550.0, step=100.0)
-    
-    st.subheader("Payload & Crew")
-    pax_in = st.number_input("Number of Passengers", min_value=0, value=34, step=1)
-    crew_in = st.number_input("Crew Weight (lbs)", min_value=0.0, value=615.0, step=10.0)
-    
-    st.subheader("Aerodynamics & Mission")
-    range_in = st.number_input("Range (mi)", min_value=100.0, value=1265.8, step=10.0)
-    sfc_in = st.number_input("SFC (lb/hp/hr)", min_value=0.1, value=0.6, step=0.05)
-    ld_in = st.number_input("Cruise L/D", min_value=5.0, value=13.0, step=0.5)
+# ==========================================
+# 3. المدخلات (مفصلة في القائمة الجانبية)
+# ==========================================
+st.sidebar.title("📑 Input Parameters")
 
-# Execute Calculations
-res = calculate_sizing(wto_in, range_in, sfc_in, ld_in, pax_in, crew_in)
+with st.sidebar.expander("1. Design Weight", expanded=True):
+    wto_in = st.number_input("Design WTO (lbs)", value=48550.0, step=100.0)
 
-# --- 4. MAIN LAYOUT ---
-st.title("Conceptual Aircraft Sizing")
-st.markdown("A clean, MDAO-based weight estimation and sensitivity analysis tool.")
-st.divider()
+with st.sidebar.expander("2. Payload & Crew", expanded=True):
+    pax_in = st.number_input("Number of PAX", value=34)
+    crew_in = st.number_input("Crew Weight (lbs)", value=615.0)
 
-# KPI Metrics (Native Streamlit)
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Fuel Fraction (Mff)", f"{res['mff']:.4f}")
-col2.metric("Growth Factor (F)", f"{res['f_growth']:.2f}")
-col3.metric("Payload Factor (D)", f"{res['d_val']:,.1f} lbs")
+with st.sidebar.expander("3. Mission & Aero", expanded=True):
+    rc_in = st.number_input("Range - Rc (miles)", value=1265.8)
+    ld_c_in = st.number_input("Cruise L/D", value=13.0)
+    cp_c_in = st.number_input("SFC - Cp", value=0.6, format="%.3f")
+    np_c_in = st.number_input("Prop Efficiency - ηp", value=0.85)
 
-convergence_delta = res['we_req'] - res['we_allow']
-col4.metric("Convergence Delta", f"{convergence_delta:,.1f} lbs", 
-            delta=f"{convergence_delta:,.1f}", delta_color="inverse")
+with st.sidebar.expander("4. Fuel Fractions", expanded=True):
+    m_res_in = st.number_input("Reserve Fuel (Mres)", value=0.05, format="%.2f")
+    m_tfo_in = st.number_input("Trapped Fuel (Mtfo)", value=0.005, format="%.3f")
 
-st.divider()
+# التنفيذ
+res = calculate_sizing_and_sensitivity(wto_in, pax_in, crew_in, rc_in, ld_c_in, cp_c_in, np_c_in, m_res_in, m_tfo_in)
 
-# Main Content Tabs
-tab1, tab2, tab3 = st.tabs(["Convergence Plot", "Detailed Breakdown", "Export Report"])
+# ==========================================
+# 4. الواجهة الرئيسية (كل قسم لحال)
+# ==========================================
+st.title("✈️ Conceptual Aircraft Sizing & Sensitivity Analysis")
+st.markdown("---")
+
+# ملخص سريع أعلى الصفحة
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Mission Fuel Fraction (Mff)", f"{res['mff']:.4f}")
+c2.metric("Required Empty Wt (WE)", f"{res['we_req']:,.1f} lbs")
+c3.metric("Growth Factor (F)", f"{res['f_growth']:.3f}")
+c4.metric("Convergence Delta", f"{(res['we_req'] - res['we_allow']):,.1f} lbs")
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# تقسيم النتائج لتبويبات (Tabs)
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 1. Weight Matching", 
+    "🧮 2. Mission Breakdown", 
+    "📉 3. Sensitivity (Table 2.20)", 
+    "📑 4. Export Thesis PDF"
+])
 
 with tab1:
-    st.subheader("Weight Convergence Analysis")
-    # Clean Plotly White Template
-    w_range = np.linspace(30000, 70000, 50)
-    sweep_data = [calculate_sizing(w, range_in, sfc_in, ld_in, pax_in, crew_in) for w in w_range]
+    st.subheader("Weight Convergence & Sizing")
+    col_chart, col_data = st.columns([2, 1])
     
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=w_range, y=[x['we_req'] for x in sweep_data], 
-                             name='Required WE', line=dict(color='blue', width=2)))
-    fig.add_trace(go.Scatter(x=w_range, y=[x['we_allow'] for x in sweep_data], 
-                             name='Allowable WE', line=dict(color='red', width=2, dash='dash')))
-    fig.add_trace(go.Scatter(x=[wto_in], y=[res['we_req']], 
-                             mode='markers', marker=dict(size=10, color='green'), name='Design Point'))
-    
-    fig.update_layout(template="plotly_white", margin=dict(l=20, r=20, t=30, b=20),
-                      xaxis_title="Gross Weight (WTO) [lbs]", yaxis_title="Empty Weight (WE) [lbs]")
-    st.plotly_chart(fig, use_container_width=True)
+    with col_chart:
+        w_axis = np.linspace(35000, 70000, 50)
+        sweep = [calculate_sizing_and_sensitivity(w, pax_in, crew_in, rc_in, ld_c_in, cp_c_in, np_c_in, m_res_in, m_tfo_in) for w in w_axis]
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=w_axis, y=[x['we_req'] for x in sweep], name='Req. Empty Weight', line=dict(color='#003366', width=3)))
+        fig.add_trace(go.Scatter(x=w_axis, y=[x['we_allow'] for x in sweep], name='Allow. Empty Weight', line=dict(color='#CC0000', width=3, dash='dash')))
+        fig.add_trace(go.Scatter(x=[wto_in], y=[res['we_req']], mode='markers+text', text=["Design Point"], textposition="top center", marker=dict(size=12, color='#009900')))
+        
+        fig.update_layout(template="simple_white", xaxis_title="Gross Weight (WTO) [lbs]", yaxis_title="Empty Weight (WE) [lbs]", margin=dict(t=20, b=20))
+        st.plotly_chart(fig, use_container_width=True)
+        
+    with col_data:
+        st.write("**Key Weights (lbs)**")
+        st.dataframe({
+            "Component": ["Payload & Crew (D)", "Total Fuel (Wf)", "Required WE", "Allowable WE"],
+            "Value": [f"{res['d_val']:,.1f}", f"{res['wf']:,.1f}", f"{res['we_req']:,.1f}", f"{res['we_allow']:,.1f}"]
+        }, hide_index=True)
 
 with tab2:
-    st.subheader("Weight & Sensitivity Log")
-    col_w, col_s = st.columns(2)
-    
-    with col_w:
-        st.markdown("**Weight Components**")
-        st.dataframe({
-            "Component": ["Payload + Crew (D)", "Mission Fuel (Wf)", "Empty Weight (Required)", "Empty Weight (Allowable)"],
-            "Value (lbs)": [f"{res['d_val']:,.1f}", f"{res['wf']:,.1f}", f"{res['we_req']:,.1f}", f"{res['we_allow']:,.1f}"]
-        }, hide_index=True, use_container_width=True)
-
-    with col_s:
-        st.markdown("**Sensitivity Derivatives**")
-        st.dataframe({
-            "Parameter": ["Range Penalty (dW/dR)", "SFC Penalty (dW/dCp)"],
-            "Value": [f"{res['dw_dr']:.4f} lbs/mi", f"{res['dw_dcp']:.2f} lbs/unit"]
-        }, hide_index=True, use_container_width=True)
+    st.subheader("Mission Fuel Fractions")
+    st.write("Detailed breakdown of fuel consumption across the mission profile.")
+    st.dataframe({
+        "Parameter": ["Total Mission Fraction (Mff)", "Cruise Fraction (fc)", "Reserve Ratio (Mres)", "Trapped Ratio (Mtfo)"],
+        "Value": [f"{res['mff']:.4f}", f"{res['f_c']:.4f}", f"{res['m_res']:.3f}", f"{res['m_tfo']:.3f}"]
+    }, hide_index=True)
 
 with tab3:
-    st.subheader("Technical Report")
-    st.write("Generate a clean PDF summary of the current design configuration.")
+    st.subheader("Sensitivity Derivatives (Ref: Table 2.20)")
+    st.write("Measures the impact of aerodynamic and propulsive changes on the Design Gross Weight.")
+    st.dataframe({
+        "Derivative": ["Growth Factor (F = dWTO/dD)", "Range Penalty (dWTO/dR)", "SFC Penalty (dWTO/dCp)"],
+        "Calculated Value": [f"{res['f_growth']:.3f}", f"{res['dw_dr']:.4f} lbs/mile", f"{res['dw_dcp']:,.2f} lbs/unit"]
+    }, hide_index=True)
+
+with tab4:
+    st.subheader("Generate Official PDF Report")
+    st.write("Export the results in a formal academic format suitable for graduation project documentation.")
     
-    def create_pdf(data):
+    def generate_thesis_pdf(data):
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_font("Arial", 'B', 16)
-        pdf.cell(0, 10, "AIRCRAFT SIZING REPORT", ln=True, align='C')
+        
+        # --- Cover Page Style Header ---
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(0, 8, "JORDAN UNIVERSITY OF SCIENCE AND TECHNOLOGY (JUST)", ln=True, align='C')
+        pdf.set_font("Arial", '', 12)
+        pdf.cell(0, 6, "Aeronautical Engineering Department", ln=True, align='C')
         pdf.ln(10)
         
-        pdf.set_font("Arial", '', 12)
-        lines = [
-            f"Target Gross Weight (WTO): {data['wto']:,.1f} lbs",
-            f"Payload Factor (D): {data['d_val']:,.1f} lbs",
-            f"Mission Fuel Fraction (Mff): {data['mff']:.4f}",
-            f"Growth Factor (F): {data['f_growth']:.2f}",
-            f"Convergence Delta: {data['we_req'] - data['we_allow']:,.1f} lbs",
-            "--------------------------------------------------",
-            f"Range Sensitivity (dW/dR): {data['dw_dr']:.4f} lbs/mi",
-            f"SFC Sensitivity (dW/dCp): {data['dw_dcp']:.2f} lbs/unit"
-        ]
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(0, 10, "AIRCRAFT CONCEPTUAL SIZING & SENSITIVITY REPORT", ln=True, align='C')
+        pdf.set_font("Arial", 'I', 11)
+        pdf.cell(0, 6, f"Date: {date.today().strftime('%B %d, %Y')}", ln=True, align='C')
+        pdf.cell(0, 6, "Prepared by: Eng. Nashat Al-Dhoun", ln=True, align='C')
+        pdf.line(10, 55, 200, 55)
+        pdf.ln(15)
         
-        for line in lines:
-            pdf.cell(0, 10, line, ln=True)
-            
+        # --- Section 1: Inputs ---
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 8, "1. INITIAL DESIGN PARAMETERS", ln=True)
+        pdf.set_font("Arial", '', 11)
+        pdf.cell(0, 6, f"   - Design Gross Weight (WTO): {data['wto']:,.1f} lbs", ln=True)
+        pdf.cell(0, 6, f"   - Payload & Crew (D): {data['d_val']:,.1f} lbs", ln=True)
+        pdf.cell(0, 6, f"   - Mission Range (Rc): {rc_in} miles", ln=True)
+        pdf.ln(5)
+        
+        # --- Section 2: Weight Convergence ---
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 8, "2. WEIGHT MATCHING RESULTS", ln=True)
+        pdf.set_font("Arial", '', 11)
+        pdf.cell(0, 6, f"   - Mission Fuel Fraction (Mff): {data['mff']:.4f}", ln=True)
+        pdf.cell(0, 6, f"   - Total Fuel Weight (Wf): {data['wf']:,.1f} lbs", ln=True)
+        pdf.cell(0, 6, f"   - Required Empty Weight: {data['we_req']:,.1f} lbs", ln=True)
+        pdf.cell(0, 6, f"   - Allowable Empty Weight: {data['we_allow']:,.1f} lbs", ln=True)
+        delta = data['we_req'] - data['we_allow']
+        pdf.cell(0, 6, f"   - Convergence Delta: {delta:,.1f} lbs", ln=True)
+        pdf.ln(5)
+        
+        # --- Section 3: Sensitivity Analysis ---
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 8, "3. SENSITIVITY DERIVATIVES (TABLE 2.20)", ln=True)
+        pdf.set_font("Arial", '', 11)
+        pdf.cell(0, 6, f"   - Growth Factor (F): {data['f_growth']:.3f}", ln=True)
+        pdf.cell(0, 6, f"   - Range Sensitivity (dWTO/dR): {data['dw_dr']:.4f} lbs/mi", ln=True)
+        pdf.cell(0, 6, f"   - SFC Sensitivity (dWTO/dCp): {data['dw_dcp']:,.2f} lbs/unit", ln=True)
+        
         return pdf.output(dest='S').encode('latin-1')
 
     st.download_button(
-        label="Download PDF Report",
-        data=create_pdf(res),
-        file_name="Aircraft_Sizing_Report.pdf",
+        label="📥 Download Thesis Report (PDF)",
+        data=generate_thesis_pdf(res),
+        file_name="Nashat_AlDhoun_Sizing_Report.pdf",
         mime="application/pdf"
-    )
+        )
