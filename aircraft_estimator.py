@@ -3,111 +3,88 @@ import math
 import numpy as np
 import pandas as pd
 import plotly.express as px
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
-import io
 
 # إعدادات الصفحة
-st.set_page_config(page_title="Aircraft Weight Estimator", layout="wide")
+st.set_page_config(page_title="Aircraft Design Pro", layout="wide")
 
-st.title("✈️ Aircraft Design & Sensitivity Analysis")
-st.markdown("---")
+st.title("✈️ Aircraft Design Cockpit")
+st.markdown("### Engineering Analysis (Based on Homework 2.8)")
 
-# --- الإدخالات من ملف الواجب ---
-st.sidebar.header("📋 Mission Specifications")
+# --- Sidebar Inputs ---
+st.sidebar.header("⚙️ Mission Specifications")
 
-# بيانات الركاب والطاقم [Source 2]
-pax_count = st.sidebar.number_input("Number of Passengers", value=34)
-pax_w = 175  # رطل 
-bag_w = 30   # رطل 
-w_crew = 615 # رطل 
-w_tfo = 242.75 # رطل 
+# بيانات الركاب بناءً على المصدر [Source 2]
+passengers = st.sidebar.number_input("Passengers", value=34)
+w_crew = 615 # lbs 
+w_tfo = 242.75 # lbs 
+w_payload = passengers * (175 + 30) # 175 lbs weight + 30 lbs baggage 
 
 # بيانات الرحلة [Source 2]
-rc_miles = st.sidebar.number_input("Cruise Range (statute miles)", value=1265.8)
-ld_cruise = st.sidebar.number_input("L/D Cruise", value=13.0)
+rc_miles = st.sidebar.number_input("Range (statute miles)", value=1265.8)
+ld_cruise = st.sidebar.number_input("L/D (Cruise)", value=13.0)
 cp_cruise = st.sidebar.number_input("Cp (lbs/Hp/Hr)", value=0.6)
-np_cruise = st.sidebar.number_input("Propeller Efficiency (ηp)", value=0.85)
+np_eff = st.sidebar.number_input("ηp (Propeller Efficiency)", value=0.85)
 
-# الثوابت الإحصائية [Source 2]
+# الثوابت الإحصائية A و B [Source 2]
 coeff_a = 0.3774
 coeff_b = 0.9647
 
-wto_guess = st.sidebar.number_input("Initial WTO Guess (lbs)", value=48550.0)
+wto_guess = st.sidebar.number_input("WTO Guess (lbs)", value=48550.0)
 
-# --- المحرك الحسابي ---
-def calculate_weights(wto):
-    # حساب الحمولة 
-    w_payload = pax_count * (pax_w + bag_w) 
+# --- Calculation Engine ---
+def run_analysis(wto):
+    # Fuel Fractions (Step 3) [Source 3]
+    f1, f2, f3, f4 = 0.990, 0.995, 0.995, 0.985 
     
-    # حساب نسب الوقود لكل مرحلة 
-    f1 = 0.990 # Engine Start
-    f2 = 0.995 # Taxi
-    f3 = 0.995 # Take-off
-    f4 = 0.985 # Climb
+    # Cruise Equation 2.9 [Source 3]
+    f_cruise = 1 / math.exp(rc_miles / (375 * (np_eff / cp_cruise) * ld_cruise))
     
-    # مرحلة الـ Cruise (Eq 2.9) 
-    f5 = 1 / math.exp(rc_miles / (375 * (np_cruise / cp_cruise) * ld_cruise))
+    # Loiter & Landing [Source 3]
+    f6, f7, f8 = 0.970, 0.985, 0.995
     
-    # مرحلة الـ Loiter (Eq 2.11) 
-    f6 = 0.970 
-    f7 = 0.985 # Descent
-    f8 = 0.995 # Landing
-    
-    mff = f1 * f2 * f3 * f4 * f5 * f6 * f7 * f8
+    mff = f1 * f2 * f3 * f4 * f_cruise * f6 * f7 * f8
     wf = wto * (1 - mff)
     
-    # الوزن الفارغ المحسوب (Step 4 & 5) 
-    we_tent = wto - wf - w_payload - w_tfo - w_crew
+    # WE Tentative (Step 5) [Source 3]
+    we_calc = wto - wf - w_payload - w_tfo - w_crew
     
-    # الوزن الفارغ المسموح إحصائياً (Step 6) 
+    # WE Allowable (Step 6) [Source 3]
     we_allow = 10**((math.log10(wto) - coeff_a) / coeff_b)
     
-    return mff, wf, we_tent, we_allow, w_payload
+    return mff, wf, we_calc, we_allow
 
-# --- العرض الرئيسي ---
-if st.button("Calculate & Analyze"):
-    mff, wf, we_calc, we_allow, w_pl = calculate_weights(wto_guess)
+# --- Results Interface ---
+if st.button("🚀 Run Analysis"):
+    mff, wf, we_calc, we_allow = run_analysis(wto_guess)
     diff = we_calc - we_allow
 
-    # عرض النتائج
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Payload Weight", f"{w_pl:,.1f} lbs")
-    col2.metric("Fuel Weight (WF)", f"{wf:,.1f} lbs")
-    col3.metric("Fuel Fraction (Mff)", f"{mff:.4f}")
+    st.subheader("📊 Weight Summary")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Fuel Fraction (Mff)", f"{mff:.4f}")
+    c2.metric("Fuel Weight (WF)", f"{wf:,.1f} lbs")
+    c3.metric("Payload Weight", f"{w_payload:,.1f} lbs")
 
-    st.subheader("Weight Matching (Step 6)")
-    res_col1, res_col2, res_col3 = st.columns(3)
-    res_col1.write(f"**Calculated WE:** {we_calc:,.2f} lbs")
-    res_col2.write(f"**Allowable WE:** {we_allow:,.2f} lbs")
-    res_col3.metric("Difference", f"{diff:.2f} lbs", delta=diff, delta_color="inverse")
+    st.subheader("⚖️ Weight Matching")
+    res1, res2, res3 = st.columns(3)
+    res1.write(f"**Calculated WE:** {we_calc:,.1f} lbs")
+    res2.write(f"**Allowable WE:** {we_allow:,.1f} lbs")
+    res3.metric("Difference", f"{diff:.2f} lbs", delta=diff, delta_color="inverse")
 
-    # --- الرسومات البيانية ---
-    st.markdown("---")
-    st.subheader("📈 Sensitivity Analysis")
+    # --- Sensitivity Analysis Chart ---
+    st.divider()
+    st.subheader("📈 Range Sensitivity Analysis")
     
-    # دراسة تأثير المدى على الوزن الإجمالي
-    ranges = np.linspace(500, 2000, 20)
-    w_needed = []
+    ranges = np.linspace(500, 2500, 50)
+    # حساب الوزن الفارغ المطلوب لتغطية المدى المختلف
+    we_trend = []
     for r in ranges:
-        # تبسيط للرسم: نجد الوزن الذي يحقق التقارب
-        w_needed.append(wto_guess * (r/rc_miles)) 
+        f_c = 1 / math.exp(r / (375 * (np_eff / cp_cruise) * ld_cruise))
+        mff_t = (0.99*0.995*0.995*0.985) * f_c * (0.97*0.985*0.995)
+        we_trend.append(wto_guess - (wto_guess * (1 - mff_t)) - w_payload - w_tfo - w_crew)
 
-    fig = px.line(x=ranges, y=w_needed, labels={'x': 'Range (miles)', 'y': 'Estimated WTO (lbs)'}, title="Impact of Range on WTO")
+    df = pd.DataFrame({"Range (miles)": ranges, "Tentative WE (lbs)": we_trend})
+    fig = px.line(df, x="Range (miles)", y="Tentative WE (lbs)", title="Empty Weight Trend vs Range")
     st.plotly_chart(fig, use_container_width=True)
 
-# --- تصدير PDF ---
-def generate_pdf():
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer)
-    styles = getSampleStyleSheet()
-    content = [Paragraph("Aircraft Design Summary Report", styles['Title']), Spacer(1, 12)]
-    content.append(Paragraph(f"Range: {rc_miles} miles", styles['Normal']))
-    content.append(Paragraph(f"WTO Guess: {wto_guess} lbs", styles['Normal']))
-    doc.build(content)
-    return buffer.getvalue()
-
-st.sidebar.markdown("---")
-if st.sidebar.button("Download Report"):
-    pdf_data = generate_pdf()
-    st.sidebar.download_button("📥 Click to Download", data=pdf_data, file_name="Aircraft_Report.pdf")
+else:
+    st.info("👈 اضغط Run Analysis بعد التأكد من المدخلات")
