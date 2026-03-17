@@ -4,80 +4,98 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 
-# إعدادات الصفحة
-st.set_page_config(page_title="Aircraft Weight Estimator", layout="wide")
+# 1. تصميم الواجهة (Neon Style)
+st.set_page_config(page_title="AeroDesign Pro", layout="wide")
 
-st.title("✈️ Aircraft Design Weight Analysis")
-st.markdown("---")
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; color: #00ffcc; }
+    .stButton>button { background-color: #00ffcc; color: black; border-radius: 10px; border: 2px solid #00ffcc; box-shadow: 0 0 10px #00ffcc; }
+    .stNumberInput { border: 1px solid #00ffcc; }
+    h1, h2, h3 { color: #00ffcc; text-shadow: 0 0 10px #00ffcc; }
+    </style>
+    """, unsafe_allow_stdio=True)
 
-# --- الثوابت من ملف الواجب ---
-# بيانات الركاب والطاقم [cite: 2]
-W_pl = 6970.0      # Payload weight 
-W_crew = 615.0     # Crew weight [cite: 2]
-W_tfo = 242.75     # Trapped Fuel & Oil [cite: 2]
-R_c = 1265.847     # Range in statute miles [cite: 2]
-LD_cruise = 13.0   # L/D Cruise [cite: 2]
-Cp_cruise = 0.6    # Cp cruise [cite: 2]
-np_cruise = 0.85   # Efficiency cruise [cite: 2]
+st.title("⚡ AeroDesign Professional: Weight & Sensitivity")
 
-# الثوابت الإحصائية [cite: 2]
-coeff_a = 0.3774 
-coeff_b = 0.9647
+# 2. تقسيم المدخلات (Sidebar)
+st.sidebar.header("🛠️ Design Parameters")
 
-# --- الواجهة الجانبية ---
-st.sidebar.header("⚙️ Inputs")
-wto_guess = st.sidebar.number_input("WTO Guess (lbs)", value=48550.0)
+with st.sidebar.expander("Passenger & Crew Data"):
+    pax = st.number_input("Passengers", value=34)
+    w_pax_total = pax * (175 + 30) # من ملفك: وزن + حقائب
+    w_crew = st.number_input("Crew Weight", value=615.0)
+    w_tfo = st.number_input("Trapped Fuel (Wtfo)", value=242.75)
 
-# --- المحرك الحسابي ---
-def perform_analysis(wto):
-    # مراحل الوقود 
-    f1, f2, f3, f4 = 0.990, 0.995, 0.995, 0.985 
+with st.sidebar.expander("Cruise Performance"):
+    rc = st.number_input("Range (statute miles)", value=1265.8)
+    ld = st.number_input("L/D Cruise", value=13.0)
+    cp = st.number_input("Cp (Specific Fuel Cons.)", value=0.6)
+    eta = st.number_input("Propeller Efficiency (ηp)", value=0.85)
+
+with st.sidebar.expander("Statistical Constants (A & B)"):
+    # يمكنك التغيير هنا بناءً على نوع الطائرة أو المادة
+    coeff_a = st.number_input("Constant A", value=0.3774, format="%.4f")
+    coeff_b = st.number_input("Constant B", value=0.9647, format="%.4f")
+
+wto_guess = st.sidebar.number_input("Initial WTO Guess (lbs)", value=48550.0)
+
+# 3. محرك الحسابات (Detailed Calculation)
+def analyze(wto):
+    # كسر الوقود لكل مرحلة بناءً على ملفك
+    phases = {
+        "Start/Taxi/Takeoff": 0.990 * 0.995 * 0.995,
+        "Climb": 0.985,
+        "Cruise": 1 / math.exp(rc / (375 * (eta / cp) * ld)),
+        "Loiter": 0.970,
+        "Descent/Landing": 0.985 * 0.995
+    }
     
-    # مرحلة Cruise (W5/W4) - Equation 2.9 
-    denominator = 375 * (np_cruise / Cp_cruise) * LD_cruise
-    f5 = 1 / math.exp(R_c / denominator) 
-    
-    # مراحل Loiter, Descent, Landing 
-    f6, f7, f8 = 0.970, 0.985, 0.995
-    
-    # Total Fuel Fraction (Mff) 
-    mff = f1 * f2 * f3 * f4 * f5 * f6 * f7 * f8
+    mff = np.prod(list(phases.values()))
     wf = wto * (1 - mff)
+    we_calc = wto - wf - w_pax_total - w_tfo - w_crew
+    we_allow = 10**((math.log10(wto) - coeff_a) / coeff_b)
     
-    # حساب الوزن الفارغ الفعلي (Tentative WE) 
-    we_tent = wto - wf - W_pl - W_tfo - W_crew
+    return mff, wf, we_calc, we_allow, phases
+
+# 4. التنفيذ والعرض
+if st.button("🚀 EXECUTE ENGINEERING ANALYSIS"):
+    mff, wf, we_calc, we_allow, phases = analyze(wto_guess)
     
-    # حساب الوزن الفارغ المسموح إحصائياً (Allowable WE) 
-    we_allow = 10**((math.log10(wto) - coeff_a) / coeff_b) 
+    # عرض العدادات (Metrics)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Fuel Fraction (Mff)", f"{mff:.4f}")
+    c2.metric("Fuel Weight", f"{wf:,.1f} lb")
+    c3.metric("Payload", f"{w_pax_total:,.0f} lb")
+    c4.metric("Matching Error", f"{we_calc - we_allow:.2f} lb")
+
+    # جدول المراحل (جديد)
+    st.subheader("📋 Mission Profile Breakdown")
+    st.table(pd.DataFrame(phases.items(), columns=["Phase", "Weight Fraction (f)"]))
+
+    # 5. تحليل الحساسية (Sensitivity) - بناءً على معادلات ملفك
+    st.divider()
+    st.subheader("📉 Design Sensitivities (Breguet Derivatives)")
     
-    return mff, wf, we_tent, we_allow
-
-# --- عرض النتائج ---
-if st.button("🚀 Run Analysis"):
-    mff, wf, we_calc, we_allow = perform_analysis(wto_guess)
-    error = we_calc - we_allow
-
-    st.subheader("📊 Results Summary")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Fuel Fraction (Mff)", f"{mff:.3f}")
-    col2.metric("Fuel Weight (WF)", f"{wf:,.1f} lbs")
-    col3.metric("Weight Gap", f"{error:.2f} lbs", delta=error, delta_color="inverse")
-
-    st.markdown("---")
-    st.subheader("⚖️ Weight Matching Verification")
-    c1, c2 = st.columns(2)
-    c1.info(f"**Tentative WE:** {we_calc:,.2f} lbs")
-    c2.success(f"**Allowable WE:** {we_allow:,.2f} lbs")
-
-    # رسم الحساسية
-    st.subheader("📈 Sensitivity Analysis")
-    ranges = np.linspace(500, 2000, 20)
-    we_trend = []
-    for r in ranges:
-        f_cruise_tmp = 1 / math.exp(r / (375 * (np_cruise / Cp_cruise) * LD_cruise))
-        m_tmp = (0.99*0.995*0.995*0.985) * f_cruise_tmp * (0.970*0.985*0.995)
-        we_trend.append(wto_guess - (wto_guess*(1-m_tmp)) - W_pl - W_tfo - W_crew)
+    # معادلة dR/dCp من الصفحة 2 في ملفك
+    sens_range_cp = -rc / cp
+    sens_range_eta = rc / eta
     
-    df_plot = pd.DataFrame({"Range (miles)": ranges, "Available WE (lbs)": we_trend})
-    fig = px.line(df_plot, x="Range (miles)", y="Available WE (lbs)", title="Empty Weight Capacity vs Range")
+    s1, s2 = st.columns(2)
+    s1.info(f"**Range Sensitivity to Cp:** {sens_range_cp:.2f} miles per unit Cp")
+    s2.info(f"**Range Sensitivity to Efficiency:** {sens_range_eta:.2f} miles per unit ηp")
+
+    # رسم بياني تفاعلي
+    st.subheader("🔍 Parametric Sweep: Range vs. WTO Required")
+    range_list = np.linspace(500, 2000, 20)
+    # حساب تقريبي للوزن المطلوب لكل مدى
+    wto_needed = [wto_guess * (math.exp(r/(375*(eta/cp)*ld)) / math.exp(rc/(375*(eta/cp)*ld))) for r in range_list]
+    
+    fig = px.area(x=range_list, y=wto_needed, 
+                  labels={'x': 'Range (miles)', 'y': 'Required WTO (lbs)'},
+                  title="Mission Capability Map")
+    fig.update_traces(line_color='#00ffcc')
     st.plotly_chart(fig, use_container_width=True)
+
+else:
+    st.write("👈 Configure the mission profile in the sidebar and press Execute.")
