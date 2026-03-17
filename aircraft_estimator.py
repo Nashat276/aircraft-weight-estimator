@@ -37,28 +37,29 @@ html, body, [class*="css"] { background-color: #050A14 !important; color: #C8D8F
     padding:0.5rem 1rem; font-family:'Share Tech Mono',monospace; font-size:0.85rem; color:#00FF88; }
 .status-warn { background:#FF880020; border:1px solid #FF880060; border-radius:8px;
     padding:0.5rem 1rem; font-family:'Share Tech Mono',monospace; font-size:0.85rem; color:#FF8800; }
-[data-testid="stSidebar"] { background:linear-gradient(180deg,#07111F,#0A1628) !important;
-    border-right:1px solid #00D4FF20 !important; }
+[data-testid="stSidebar"] { background:linear-gradient(180deg,#07111F,#0A1628) !important; }
 </style>
 """, unsafe_allow_html=True)
 
-PBGX = dict(gridcolor='#00D4FF12', linecolor='#00D4FF30', color='#C8D8F0')
 
 def mk_layout(title='', height=350, xt='', yt='', yrange=None):
+    ax = dict(gridcolor='#00D4FF12', linecolor='#00D4FF30')
+    if xt: ax['title'] = dict(text=xt)
+    ay = dict(gridcolor='#00D4FF12', linecolor='#00D4FF30')
+    if yt: ay['title'] = dict(text=yt)
+    if yrange: ay['range'] = yrange
     d = dict(
         paper_bgcolor='rgba(5,10,20,0)',
         plot_bgcolor='rgba(10,22,40,0.7)',
         font=dict(family='Share Tech Mono', color='#C8D8F0', size=11),
         margin=dict(l=55, r=20, t=45, b=45),
-        xaxis=dict(PBGX),
-        yaxis=dict(PBGX),
+        xaxis=ax,
+        yaxis=ay,
     )
-    if title:  d['title']  = dict(text=title, font=dict(color='#4FC3F7', size=13))
+    if title:  d['title']  = dict(text=title,  font=dict(color='#4FC3F7', size=13))
     if height: d['height'] = height
-    if xt:     d['xaxis']['title'] = xt
-    if yt:     d['yaxis']['title'] = yt
-    if yrange: d['yaxis']['range'] = yrange
     return d
+
 
 def compute_mission(p):
     Wpl   = p['n_pax']*(p['w_pax']+p['w_bag']) + p['n_crew']*205 + p['n_att']*200
@@ -68,8 +69,9 @@ def compute_mission(p):
     W5    = 1/math.exp(Rc/(375*(p['np_c']/p['Cp_c'])*p['LD_c']))
     Vm    = p['V_lkts']*1.15078
     W6    = 1/math.exp(p['E_l']/(375*(1/Vm)*(p['np_l']/p['Cp_l'])*p['LD_l']))
-    fracs = dict(zip(['Engine Start','Taxi','Takeoff','Climb','Cruise','Loiter','Descent','Landing'],
-                     [0.990,0.995,0.995,0.985,W5,W6,0.985,0.995]))
+    fracs = dict(zip(
+        ['Engine Start','Taxi','Takeoff','Climb','Cruise','Loiter','Descent','Landing'],
+        [0.990,0.995,0.995,0.985,W5,W6,0.985,0.995]))
     Mff = 1.0
     for v in fracs.values(): Mff *= v
     WF_used = p['Wto_guess']*(1-Mff)
@@ -89,7 +91,7 @@ def solve_wto(p, tol=1.0, n=200):
         else: lo=mid
     return mid,r
 
-def sens_calc(p,Wto):
+def sens_calc(p, Wto):
     Rc=p['range_nm']*1.15078; Vm=p['V_lkts']*1.15078
     Mff=compute_mission({**p,'Wto_guess':Wto})['Mff']
     D=p['n_pax']*(p['w_pax']+p['w_bag'])+p['n_crew']*205*2+p['n_att']*200
@@ -106,6 +108,7 @@ def sens_calc(p,Wto):
         dnp_E=-F*E*Vm*p['Cp_l']/(375*p['np_l']**2*p['LD_l']),
         dLD_E=-F*E*Vm*p['Cp_l']/(375*p['np_l']*p['LD_l']**2),
     )
+
 
 DEF = dict(n_pax=34,w_pax=175,w_bag=30,n_crew=2,n_att=1,Mtfo=0.005,Mres=0.0,
            range_nm=1100,V_lkts=250,LD_c=13,Cp_c=0.60,np_c=0.85,
@@ -131,8 +134,8 @@ with st.sidebar:
     Cp_l   = st.slider("Cp loiter",          0.3, 1.0, DEF['Cp_l'],  step=0.01)
     np_l   = st.slider("np loiter",          0.5,0.95, DEF['np_l'],  step=0.01)
     st.markdown('<div class="sec-hdr">REGRESSION</div>', unsafe_allow_html=True)
-    A_c  = st.number_input("A", value=DEF['A'],    step=0.001, format="%.4f")
-    B_c  = st.number_input("B", value=DEF['B'],    step=0.001, format="%.4f")
+    A_c  = st.number_input("A", value=DEF['A'],     step=0.001, format="%.4f")
+    B_c  = st.number_input("B", value=DEF['B'],     step=0.001, format="%.4f")
     Mtfo = st.number_input("M_tfo", value=DEF['Mtfo'], step=0.001, format="%.4f")
 
 P = dict(n_pax=n_pax,w_pax=w_pax,w_bag=w_bag,n_crew=n_crew,n_att=n_att,
@@ -146,7 +149,7 @@ S = sens_calc(P,Wto)
 st.markdown('<h1 class="main-title">AERONOVA SIMULATOR X</h1>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">PROPELLER-DRIVEN AIRCRAFT PRELIMINARY SIZING - BREGUET</div>', unsafe_allow_html=True)
 if abs(R['diff'])<5:
-    st.markdown(f'<div class="status-ok">CONVERGED - WE = {R["diff"]:.2f} lbs | W_TO = {Wto:,.0f} lbs</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="status-ok">CONVERGED | W_TO = {Wto:,.0f} lbs | delta = {R["diff"]:.2f} lbs</div>', unsafe_allow_html=True)
 else:
     st.markdown(f'<div class="status-warn">DELTA: {R["diff"]:.1f} lbs</div>', unsafe_allow_html=True)
 st.markdown("---")
@@ -171,18 +174,24 @@ with tab1:
         phases = list(R['fracs'].keys())
         fracs  = list(R['fracs'].values())
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=phases,y=fracs,
+        fig.add_trace(go.Bar(
+            x=phases, y=fracs,
             marker_color=['#8A2BE2','#7B6FD4','#6BB4C6','#00D4FF','#00C4EE','#00FF88','#00D070','#00B060'],
-            text=[f'{v:.4f}' for v in fracs], textposition='outside',
-            textfont=dict(size=10,color='#C8D8F0')))
-        fig.update_layout(**mk_layout('Phase Weight Fractions',340,yrange=[0.80,1.02]))
-        st.plotly_chart(fig,use_container_width=True)
+            text=[f'{v:.4f}' for v in fracs],
+            textposition='outside',
+            textfont=dict(size=10, color='#C8D8F0'),
+        ))
+        fig.update_layout(**mk_layout('Phase Weight Fractions', 340, yrange=[0.80,1.02]))
+        st.plotly_chart(fig, use_container_width=True)
+
     with cb:
         st.markdown('<div class="sec-hdr">GAUGE</div>', unsafe_allow_html=True)
-        fig2=go.Figure(go.Indicator(mode="gauge+number+delta",value=Wto,
+        fig2=go.Figure(go.Indicator(
+            mode="gauge+number+delta", value=Wto,
             delta={'reference':48550,'relative':False,'font':{'color':'#00FF88','size':14}},
             number={'suffix':' lbs','font':{'color':'#00D4FF','size':20}},
-            gauge={'axis':{'range':[10000,150000]},'bar':{'color':'#00D4FF','thickness':0.25},
+            gauge={'axis':{'range':[10000,150000]},
+                   'bar':{'color':'#00D4FF','thickness':0.25},
                    'bgcolor':'#0A1628','borderwidth':1,'bordercolor':'#00D4FF30',
                    'steps':[{'range':[10000,50000],'color':'#00FF8810'},
                              {'range':[50000,100000],'color':'#00D4FF10'},
@@ -206,11 +215,13 @@ with tab1:
         except: wto_arr.append(float('nan'))
     fig3=go.Figure()
     fig3.add_trace(go.Scatter(x=rng_arr,y=wto_arr,mode='lines',
-        line=dict(color='#00D4FF',width=2.5),fill='tozeroy',fillcolor='rgba(0,212,255,0.05)'))
+        line=dict(color='#00D4FF',width=2.5),
+        fill='tozeroy',fillcolor='rgba(0,212,255,0.05)'))
     fig3.add_vline(x=range_nm,line_dash='dash',line_color='#FF3CAC',line_width=1.5,
         annotation_text=f'{range_nm} nm',annotation_font_color='#FF3CAC')
     fig3.update_layout(**mk_layout('W_TO vs Range',320,xt='Range (nm)',yt='W_TO (lbs)'))
     st.plotly_chart(fig3,use_container_width=True)
+
 
 with tab2:
     st.markdown('<div class="sec-hdr">SENSITIVITY PARTIALS</div>', unsafe_allow_html=True)
@@ -259,6 +270,7 @@ with tab2:
         margin=dict(l=0,r=0,t=50,b=0),height=500)
     st.plotly_chart(fig4,use_container_width=True)
 
+
 with tab3:
     WE=R['WE']; WOE=R['WOE']; WF=R['WF']
     Wpl=R['Wpl']; Wcrew=R['Wcrew']; Wtfo=R['Wtfo']
@@ -285,7 +297,8 @@ with tab3:
         for f in fv: cum.append(cum[-1]*f)
         fig_w=go.Figure()
         fig_w.add_trace(go.Scatter(x=pl,y=cum,mode='lines+markers',
-            line=dict(color='#00D4FF',width=2.5),marker=dict(color='#8A2BE2',size=8)))
+            line=dict(color='#00D4FF',width=2.5),
+            marker=dict(color='#8A2BE2',size=8)))
         fig_w.update_layout(**mk_layout('Weight Through Mission',320,xt='Phase',yt='Weight (lbs)'))
         st.plotly_chart(fig_w,use_container_width=True)
 
@@ -314,6 +327,7 @@ with tab3:
     fig_pr.update_layout(**mk_layout('W_TO vs Passengers',300,xt='Passengers',yt='W_TO (lbs)'))
     st.plotly_chart(fig_pr,use_container_width=True)
 
+
 with tab4:
     st.markdown('<div class="sec-hdr">EXPORT</div>', unsafe_allow_html=True)
     ce1,ce2=st.columns(2)
@@ -330,7 +344,8 @@ with tab4:
         buf=io.StringIO(); pd.DataFrame(rows).to_csv(buf,index=False)
         st.download_button("DOWNLOAD CSV",buf.getvalue(),"aeronova.csv","text/csv",use_container_width=True)
         buf2=io.StringIO()
-        pd.DataFrame({'Phase':list(R['fracs'].keys()),'Wi/Wi-1':list(R['fracs'].values())}).to_csv(buf2,index=False)
+        pd.DataFrame({'Phase':list(R['fracs'].keys()),
+                       'Wi/Wi-1':list(R['fracs'].values())}).to_csv(buf2,index=False)
         st.download_button("DOWNLOAD FRACTIONS",buf2.getvalue(),"fractions.csv","text/csv",use_container_width=True)
     with ce2:
         def make_pdf():
@@ -344,7 +359,8 @@ with tab4:
             sH=ParagraphStyle('H',parent=styles['Heading2'],fontSize=11,
                 textColor=colors.HexColor('#8A2BE2'),spaceBefore=10,spaceAfter=4)
             sB=ParagraphStyle('B',parent=styles['Normal'],fontSize=9,leading=13)
-            ts=TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#0A1628')),
+            ts=TableStyle([
+                ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#0A1628')),
                 ('TEXTCOLOR',(0,0),(-1,0),colors.HexColor('#00D4FF')),
                 ('FONTSIZE',(0,0),(-1,-1),9),
                 ('GRID',(0,0),(-1,-1),0.5,colors.HexColor('#334466')),
@@ -372,5 +388,6 @@ with tab4:
         st.download_button("DOWNLOAD PDF",make_pdf(),"aeronova.pdf","application/pdf",use_container_width=True)
 
     st.markdown("---")
-    st.dataframe(pd.DataFrame({'Param':list(P.keys()),'Value':[str(v) for v in P.values()]}),
+    st.dataframe(pd.DataFrame({'Param':list(P.keys()),
+                                'Value':[str(v) for v in P.values()]}),
         hide_index=True,use_container_width=True)
