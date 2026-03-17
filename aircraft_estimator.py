@@ -32,13 +32,14 @@ html, body, [class*="css"] {
   padding-bottom:0.5rem; border-bottom:1px solid #F1F5F9; margin-bottom:0.8rem; }
 .cn { font-size:0.74rem; color:#94A3B8; line-height:1.6; margin-top:0.5rem; }
 
-.kpi { background:#fff; border:1px solid #E2E8F0; border-radius:10px;
-  padding:0.9rem 1rem; border-top:2px solid #0EA5E9; }
-.kv { font-family:'DM Mono',monospace; font-size:1.35rem; font-weight:500;
-  color:#0D1B2A; line-height:1.1; }
-.ku { font-size:0.7rem; color:#64748B; margin-left:0.15rem; }
-.kl { font-size:0.58rem; color:#94A3B8; letter-spacing:0.09em;
-  margin-top:0.28rem; text-transform:uppercase; }
+.kpi { background:#fff; border:1px solid #BAE6FD; border-radius:12px;
+  padding:1.1rem 1.2rem; border-top:3px solid #0EA5E9;
+  box-shadow:0 2px 10px rgba(14,165,233,0.10); }
+.kv { font-family:'DM Mono',monospace; font-size:1.65rem; font-weight:600;
+  color:#0369A1; line-height:1.1; }
+.ku { font-size:0.75rem; color:#64748B; margin-left:0.2rem; font-weight:400; }
+.kl { font-size:0.62rem; color:#64748B; letter-spacing:0.09em;
+  margin-top:0.35rem; text-transform:uppercase; font-weight:500; }
 
 .s-ok { background:#F0FDF4; border-left:3px solid #22C55E; border-radius:0 8px 8px 0;
   padding:0.55rem 1.1rem; font-family:'DM Mono',monospace; font-size:0.78rem;
@@ -205,57 +206,52 @@ WE    = RR['WE'];  WOE = RR['WOE']; WF  = RR['WF']
 Wpl   = RR['Wpl']; Wcrew=RR['Wcrew']; Wtfo_r=RR['Wtfo']
 
 # ── HERO card ───────────────────────────────────────────────────
+_sc = '#15803D' if conv else '#C2410C'
+_sb = '#F0FDF4' if conv else '#FFF7ED'
+_st = '✓ converged' if conv else '⚠ check inputs'
 st.markdown(f"""
-<div style="background:#fff;border:1px solid #E2E8F0;border-radius:14px;
-  border-top:3px solid #0EA5E9;padding:1.1rem 1.6rem;margin-bottom:1.1rem">
-  <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem">
-    <div style="min-width:0">
-      <div style="font-family:'DM Mono',monospace;font-size:1.25rem;font-weight:600;
-        color:#0D1B2A;line-height:1;margin-bottom:0.22rem">
-        AERO<span style="color:#0EA5E9">SIZER</span> PRO
-      </div>
-      <div style="font-family:'DM Mono',monospace;font-size:0.6rem;color:#64748B;
-        letter-spacing:0.11em;text-transform:uppercase;margin-bottom:0.55rem;white-space:nowrap">
-        Preliminary Aircraft Weight Estimation &nbsp;·&nbsp; Breguet Method &nbsp;·&nbsp; Propeller-Driven
-      </div>
-      <div style="display:flex;gap:5px;flex-wrap:wrap">
-        <span style="background:#EFF8FF;color:#0369A1;font-family:'DM Mono',monospace;font-size:0.6rem;
-          padding:0.18rem 0.55rem;border-radius:4px;border:1px solid #BAE6FD;white-space:nowrap">Raymer (2018)</span>
-        <span style="background:#EFF8FF;color:#0369A1;font-family:'DM Mono',monospace;font-size:0.6rem;
-          padding:0.18rem 0.55rem;border-radius:4px;border:1px solid #BAE6FD;white-space:nowrap">Roskam Pt. I</span>
-        <span style="background:#EFF8FF;color:#0369A1;font-family:'DM Mono',monospace;font-size:0.6rem;
-          padding:0.18rem 0.55rem;border-radius:4px;border:1px solid #BAE6FD;white-space:nowrap">Breguet Eq. 2.9 / 2.11</span>
-        <span style="background:#EFF8FF;color:#0369A1;font-family:'DM Mono',monospace;font-size:0.6rem;
-          padding:0.18rem 0.55rem;border-radius:4px;border:1px solid #BAE6FD;white-space:nowrap">Propeller Aircraft</span>
-      </div>
-    </div>
-    <div style="text-align:right;border-left:1px solid #E2E8F0;padding-left:1.2rem;flex-shrink:0">
-      <div style="font-family:'DM Mono',monospace;font-size:0.56rem;color:#94A3B8;
-        letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.12rem">Current W_TO</div>
-      <div style="font-family:'DM Mono',monospace;font-size:1.85rem;font-weight:600;
-        color:#0369A1;line-height:1">{Wto:,.0f}</div>
-      <div style="font-family:'DM Mono',monospace;font-size:0.58rem;color:#94A3B8;margin-top:0.1rem">
-        lbs &nbsp;·&nbsp; {'✓ converged' if conv else '⚠ check inputs'}</div>
-    </div>
+<div style="background:#fff;border:1px solid #BAE6FD;border-radius:14px;
+  border-left:5px solid #0EA5E9;padding:0.8rem 1.5rem;margin-bottom:0.9rem;
+  display:flex;align-items:center;justify-content:space-between;
+  box-shadow:0 2px 10px rgba(14,165,233,0.08)">
+  <div style="font-family:'DM Mono',monospace;font-size:1.55rem;font-weight:700;
+    color:#0D1B2A;letter-spacing:0.02em;line-height:1">
+    AERO<span style="color:#0EA5E9">SIZER</span> PRO
   </div>
+  <div style="background:{_sb};color:{_sc};font-family:'DM Mono',monospace;
+    font-size:0.68rem;font-weight:600;padding:0.28rem 0.85rem;
+    border-radius:20px;letter-spacing:0.07em">{_st}</div>
 </div>
 """, unsafe_allow_html=True)
 
+# ── status bar ──
 if conv:
     st.markdown(f'<div class="s-ok">✓  Converged  ·  W_TO = {Wto:,.0f} lbs  ·  Mff = {RR["Mff"]:.5f}  ·  ΔWE = {RR["diff"]:+.1f} lbs</div>', unsafe_allow_html=True)
 else:
     st.markdown(f'<div class="s-err">⚠  Not converged  ·  ΔWE = {RR["diff"]:+.0f} lbs  ·  Adjust inputs or regression constants A, B</div>', unsafe_allow_html=True)
 
+# ── KPI row ──
+_kpi_data = [
+    (f"{Wto:,.0f}",      "lbs", "Gross Takeoff W_TO",  "#0369A1", "#EFF8FF", "#0EA5E9"),
+    (f"{RR['Mff']:.5f}", "",    "Fuel Fraction Mff",   "#0D1B2A", "#F8FAFC", "#94A3B8"),
+    (f"{WF:,.0f}",       "lbs", "Total Fuel W_F",      "#0D1B2A", "#F8FAFC", "#94A3B8"),
+    (f"{Wpl:,.0f}",      "lbs", "Payload W_PL",        "#0D1B2A", "#F8FAFC", "#94A3B8"),
+    (f"{WE:,.0f}",       "lbs", "Empty Weight W_E",    "#0D1B2A", "#F8FAFC", "#94A3B8"),
+]
 k1,k2,k3,k4,k5 = st.columns(5)
-for col,val,unit,lbl in [
-    (k1, f"{Wto:,.0f}",       "lbs", "Gross Takeoff W_TO"),
-    (k2, f"{RR['Mff']:.5f}",  "",    "Fuel Fraction Mff"),
-    (k3, f"{WF:,.0f}",        "lbs", "Total Fuel W_F"),
-    (k4, f"{Wpl:,.0f}",       "lbs", "Payload W_PL"),
-    (k5, f"{WE:,.0f}",        "lbs", "Empty Weight W_E"),
-]:
+for col,(val,unit,lbl,vc,bg,top) in zip([k1,k2,k3,k4,k5], _kpi_data):
     with col:
-        st.markdown(f'<div class="kpi"><div class="kv">{val}<span class="ku">{unit}</span></div><div class="kl">{lbl}</div></div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="background:{bg};border:1px solid #E2E8F0;border-radius:12px;
+          padding:1rem 1.1rem;border-top:3px solid {top};
+          box-shadow:0 2px 8px rgba(0,0,0,0.05)">
+          <div style="font-family:'DM Mono',monospace;font-size:1.6rem;font-weight:700;
+            color:{vc};line-height:1.1">{val}
+            <span style="font-size:0.72rem;color:#64748B;font-weight:400;margin-left:2px">{unit}</span>
+          </div>
+          <div style="font-size:0.62rem;color:#64748B;letter-spacing:0.08em;
+            margin-top:0.4rem;text-transform:uppercase;font-weight:500">{lbl}</div>
+        </div>""", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 tab1,tab2,tab3,tab4,tab5 = st.tabs(["  ① Mission Sizing  ","  ② Sensitivity  ","  ③ Weight Breakdown  ","  ④ Export  ","  ⑤ References  "])
