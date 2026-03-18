@@ -12,10 +12,11 @@ from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
 from reportlab.lib.units import cm
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
+# 1. إعدادات الصفحة الأساسية
 st.set_page_config(page_title="AeroSizer Pro", page_icon="✈", layout="wide",
                    initial_sidebar_state="expanded")
 
-# ── كود تتبع Google Analytics ──
+# 2. كود تتبع Google Analytics (G-C98XM2XQFF) ──
 GA_ID = "G-C98XM2XQFF"
 GA_SCRIPT = f"""
 <script async src="https://www.googletagmanager.com/gtag/js?id={GA_ID}"></script>
@@ -27,8 +28,8 @@ GA_SCRIPT = f"""
 </script>
 """
 st.components.v1.html(GA_SCRIPT, width=0, height=0)
-# ───────────────────────────────
 
+# 3. بقية الكود الخاص بك (CSS و PHYSICS و UI)
 CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
@@ -156,27 +157,13 @@ st.markdown(CSS, unsafe_allow_html=True)
 
 # ── PHYSICS ──
 def compute_mission(p):
-    """
-    Exact Raymer HW 2.8 weight build-up (Steps 1-6).
-    
-    Structure (matches HW paper exactly):
-      Wpl   = passengers × (body + baggage)       ← cabin payload only
-      Wcrew = (pilots + attendants) × 205 lbs     ← all crew @ 205 lbs
-      Wtfo  = Wto × Mtfo                          ← trapped fuel & oil
-      WF    = Wto×(1-Mff) + Wto×Mr×(1-Mff)      ← usable + reserve fuel
-                                                     (Wtfo NOT in WF)
-      WOE   = Wto - WF - Wpl                      ← Step 4 operating empty
-      WE    = WOE - Wtfo - Wcrew                  ← Step 5 empty tent.
-      WEa   = 10^[(log Wto - A) / B]              ← Step 6 allowable
-      diff  = WEa - WE  → converged when |diff| < 0.5 lbs
-    """
-    Wpl   = p['npax']*(p['wpax']+p['wbag'])          # passengers only
-    Wcrew = (p['ncrew'] + p['natt']) * 205            # all crew @ 205 lbs
+    Wpl   = p['npax']*(p['wpax']+p['wbag'])
+    Wcrew = (p['ncrew'] + p['natt']) * 205
     Wtfo  = p['Wto']*p['Mtfo']
-    Rc    = p['R']*1.15078                            # nm → statute miles
-    Vm    = p['Vl']*1.15078                           # kts → mph
-    W5    = 1.0/math.exp(Rc/(375.0*(p['npc']/p['Cpc'])*p['LDc']))   # Eq 2.9
-    W6    = 1.0/math.exp(p['El']/(375.0*(1.0/Vm)*(p['npl']/p['Cpl'])*p['LDl']))  # Eq 2.11
+    Rc    = p['R']*1.15078
+    Vm    = p['Vl']*1.15078
+    W5    = 1.0/math.exp(Rc/(375.0*(p['npc']/p['Cpc'])*p['LDc']))
+    W6    = 1.0/math.exp(p['El']/(375.0*(1.0/Vm)*(p['npl']/p['Cpl'])*p['LDl']))
     phases = {
         'Engine Start':(0.990,'Fixed','T2.1'),
         'Taxi':        (0.995,'Fixed','T2.1'),
@@ -189,37 +176,23 @@ def compute_mission(p):
     }
     Mff=1.0
     for v,_,_ in phases.values(): Mff*=v
-    WFu  = p['Wto']*(1.0-Mff)                        # usable fuel
-    WF   = WFu + p['Wto']*p['Mr']*(1.0-Mff)          # total fuel (Wtfo separate)
-    WOE  = p['Wto'] - WF - Wpl                        # Step 4 operating empty
-    WE   = WOE - Wtfo - Wcrew                         # Step 5 empty weight (tent.)
-    WEa  = 10.0**((math.log10(p['Wto'])-p['A'])/p['B'])  # Step 6 allowable
+    WFu  = p['Wto']*(1.0-Mff)
+    WF   = WFu + p['Wto']*p['Mr']*(1.0-Mff)
+    WOE  = p['Wto'] - WF - Wpl
+    WE   = WOE - Wtfo - Wcrew
+    WEa  = 10.0**((math.log10(p['Wto'])-p['A'])/p['B'])
     return dict(Wpl=Wpl,Wcrew=Wcrew,Wtfo=Wtfo,Mff=Mff,
                 WF=WF,WFu=WFu,WOE=WOE,WE=WE,WEa=WEa,
                 diff=WEa-WE,phases=phases,Rc=Rc,Vm=Vm)
 
 def solve_Wto(p, tol=0.5, n=500):
-    """
-    Bisection solver for W_TO.
-    p['Wto'] is the USER GUESS — used to seed a smarter search bracket.
-    Final result is the true converged root (independent of guess once bracket found).
-    
-    HW 2.8 logic: iterate until W_E_tentative == W_E_allowable (diff < tol).
-    Changing any input (R, LDc, npax, etc.) → different Mff → different W_TO.
-    Changing Wto_g only affects search speed, NOT the converged answer.
-    """
     pp = dict(p)
     guess = float(p.get('Wto', 48550))
-    
-    # Smart bracket: search around guess first (±60%), then full range
-    lo, hi = None, None
-    prev_d, prev_w = None, None
-    
-    # Build search range centered near guess for faster convergence
     lo_bound = max(5000, int(guess * 0.3))
     hi_bound = min(600000, int(guess * 3.5))
     step = max(500, int((hi_bound - lo_bound) / 300))
-    
+    lo, hi = None, None
+    prev_d, prev_w = None, None
     for w in range(lo_bound, hi_bound + step, step):
         pp['Wto'] = float(w)
         d = compute_mission(pp)['diff']
@@ -227,8 +200,6 @@ def solve_Wto(p, tol=0.5, n=500):
             lo, hi = float(prev_w), float(w)
             break
         prev_d, prev_w = d, w
-    
-    # Fallback: full range scan if bracket not found
     if lo is None:
         prev_d, prev_w = None, None
         for w in range(5000, 600001, 1000):
@@ -238,28 +209,22 @@ def solve_Wto(p, tol=0.5, n=500):
                 lo, hi = float(prev_w), float(w)
                 break
             prev_d, prev_w = d, w
-    
     if lo is None:
-        # No root found — return guess with its mission values
         pp['Wto'] = guess
         return guess, compute_mission(pp)
-    
-    # Bisection to converge
     for _ in range(n):
         m = (lo + hi) / 2.0
         pp['Wto'] = m
         r = compute_mission(pp)
-        if abs(r['diff']) < tol:
-            return m, r
-        if r['diff'] > 0:
-            lo = m
+        if abs(r['diff']) < tol: return m, r
+        if r['diff'] > 0: lo = m
         else: hi=m
     return m,compute_mission(pp)
 
 def sensitivity(p,Wto):
     RR=compute_mission({**p,'Wto':Wto})
     Mff=RR['Mff']; Rc=RR['Rc']; Vm=RR['Vm']
-    Wpl=RR['Wpl']; Wcrew=RR['Wcrew']   # Wpl=pax only; Wcrew=(pilots+att)*205
+    Wpl=RR['Wpl']; Wcrew=RR['Wcrew']
     C=1.0-(1.0+p['Mr'])*(1.0-Mff)-p['Mtfo']
     D=Wpl+Wcrew
     dn=C*Wto*(1.0-p['B'])-D
@@ -277,38 +242,32 @@ def sensitivity(p,Wto):
 # ── SIDEBAR ──
 with st.sidebar:
     st.markdown('<div class="sb-logo"><div class="sb-logo-title">AERO<span>SIZER</span></div><div class="sb-logo-sub">Raymer Ch.2 — Propeller Weight Estimation</div></div>',unsafe_allow_html=True)
-
     st.markdown('<div class="sb-sec">① Cabin & Crew</div>',unsafe_allow_html=True)
-    npax  = st.number_input("Passengers",            1,  400, 34,   step=1)
-    wpax  = st.number_input("Pax body weight (lbs)", 100,300, 175,  step=5)
-    wbag  = st.number_input("Baggage weight (lbs)",  0,  100, 30,   step=5)
-    ncrew = st.number_input("Flight crew (pilots)",  1,  6,   2,    step=1)
-    natt  = st.number_input("Cabin attendants",      0,  10,  1,    step=1)
-
+    npax = st.number_input("Passengers", 1, 400, 34, step=1)
+    wpax = st.number_input("Pax body weight (lbs)", 100,300, 175, step=5)
+    wbag = st.number_input("Baggage weight (lbs)", 0, 100, 30, step=5)
+    ncrew = st.number_input("Flight crew (pilots)", 1, 6, 2, step=1)
+    natt = st.number_input("Cabin attendants", 0, 10, 1, step=1)
     st.markdown('<div class="sb-sec">② Cruise Segment</div>',unsafe_allow_html=True)
-    R_nm = st.number_input("Design range (nm)",         100,6000,1100,step=50)
-    LDc  = st.number_input("Cruise L/D",                4.0,30.0,13.0,step=0.5,format="%.1f")
-    Cpc  = st.number_input("Cruise SFC Cp (lbs/hp/hr)", 0.20,1.20,0.60,step=0.01,format="%.2f")
-    npc  = st.number_input("Cruise η_p",                0.30,0.98,0.85,step=0.01,format="%.2f")
-
+    R_nm = st.number_input("Design range (nm)", 100,6000,1100,step=50)
+    LDc = st.number_input("Cruise L/D", 4.0,30.0,13.0,step=0.5,format="%.1f")
+    Cpc = st.number_input("Cruise SFC Cp (lbs/hp/hr)", 0.20,1.20,0.60,step=0.01,format="%.2f")
+    npc = st.number_input("Cruise η_p", 0.30,0.98,0.85,step=0.01,format="%.2f")
     st.markdown('<div class="sb-sec">③ Loiter / Reserve</div>',unsafe_allow_html=True)
-    El   = st.number_input("Loiter endurance E (hr)",  0.10,6.0,0.75,step=0.05,format="%.2f")
-    Vl   = st.number_input("Loiter speed (kts)",        60, 400,250, step=5)
-    LDl  = st.number_input("Loiter L/D",               4.0,30.0,16.0,step=0.5,format="%.1f")
-    Cpl  = st.number_input("Loiter SFC Cp (lbs/hp/hr)",0.20,1.20,0.65,step=0.01,format="%.2f")
-    npl  = st.number_input("Loiter η_p",               0.30,0.98,0.77,step=0.01,format="%.2f")
-
+    El = st.number_input("Loiter endurance E (hr)", 0.10,6.0,0.75,step=0.05,format="%.2f")
+    Vl = st.number_input("Loiter speed (kts)", 60, 400,250, step=5)
+    LDl = st.number_input("Loiter L/D", 4.0,30.0,16.0,step=0.5,format="%.1f")
+    Cpl = st.number_input("Loiter SFC Cp (lbs/hp/hr)",0.20,1.20,0.65,step=0.01,format="%.2f")
+    npl = st.number_input("Loiter η_p", 0.30,0.98,0.77,step=0.01,format="%.2f")
     st.markdown('<div class="sb-sec">④ Regression Constants (T2.2)</div>',unsafe_allow_html=True)
-    A_v  = st.number_input("A  (Table 2.15)",           0.0,2.0,0.3774,step=0.0001,format="%.4f")
-    B_v  = st.number_input("B  (Table 2.2/2.15)",       0.1,2.0,0.9647,step=0.0001,format="%.4f")
-
+    A_v = st.number_input("A (Table 2.15)", 0.0,2.0,0.3774,step=0.0001,format="%.4f")
+    B_v = st.number_input("B (Table 2.2/2.15)", 0.1,2.0,0.9647,step=0.0001,format="%.4f")
     st.markdown('<div class="sb-sec">⑤ Fuel Allowances & W_TO Guess</div>',unsafe_allow_html=True)
-    Mtfo  = st.number_input("M_tfo  (trapped fuel)",  0.000,0.05,0.005,step=0.001,format="%.3f")
-    Mres  = st.number_input("M_res  (reserve ratio)", 0.000,0.10,0.000,step=0.001,format="%.3f")
+    Mtfo = st.number_input("M_tfo (trapped fuel)", 0.000,0.05,0.005,step=0.001,format="%.3f")
+    Mres = st.number_input("M_res (reserve ratio)", 0.000,0.10,0.000,step=0.001,format="%.3f")
     Wto_g = st.number_input("W_TO initial guess (lbs)",5000,500000,48550,step=1000)
-
     st.markdown("<br>",unsafe_allow_html=True)
-    calc = st.button("⟳  Run Sizing",use_container_width=True)
+    calc = st.button("⟳ Run Sizing",use_container_width=True)
 
 P = dict(npax=int(npax),wpax=float(wpax),wbag=float(wbag),
          ncrew=int(ncrew),natt=int(natt),Mtfo=float(Mtfo),Mr=float(Mres),
@@ -316,14 +275,11 @@ P = dict(npax=int(npax),wpax=float(wpax),wbag=float(wbag),
          El=float(El),LDl=float(LDl),Cpl=float(Cpl),npl=float(npl),
          A=float(A_v),B=float(B_v),Wto=float(Wto_g))
 
-# Every param change (incl. Wto_g) triggers recalc.
-# Wto_g is the bisection search start — final answer independent of it
-# as long as it's in a reasonable bracket.
 P_key = str(sorted(P.items()))
 if 'res' not in st.session_state or st.session_state.get('_key') != P_key or calc:
     Wto, RR = solve_Wto(P)
     S = sensitivity(P, Wto)
-    st.session_state['res']  = (Wto, RR, S)
+    st.session_state['res'] = (Wto, RR, S)
     st.session_state['_key'] = P_key
 else:
     Wto, RR, S = st.session_state['res']
@@ -380,11 +336,11 @@ if conv:
 else:
     st.markdown(f'<div class="status-err">⚠ &nbsp; Not converged — ΔW_E={RR["diff"]:+.0f} lbs. Adjust A, B constants or inputs.</div>',unsafe_allow_html=True)
 
-kpis=[(f"{Wto:,.0f}","lbs","W_TO  Gross Takeoff","primary"),
-      (f"{RR['Mff']:.5f}","","Mff  Fuel Fraction",""),
-      (f"{WF:,.0f}","lbs","W_F  Total Fuel","amber"),
-      (f"{Wpl:,.0f}","lbs","W_PL  Payload","green"),
-      (f"{WE:,.0f}","lbs","W_E  Empty Weight","")]
+kpis=[(f"{Wto:,.0f}","lbs","W_TO Gross Takeoff","primary"),
+      (f"{RR['Mff']:.5f}","","Mff Fuel Fraction",""),
+      (f"{WF:,.0f}","lbs","W_F Total Fuel","amber"),
+      (f"{Wpl:,.0f}","lbs","W_PL Payload","green"),
+      (f"{WE:,.0f}","lbs","W_E Empty Weight","")]
 cols=st.columns(5)
 for col,(val,unit,lbl,cls) in zip(cols,kpis):
     with col:
@@ -392,10 +348,7 @@ for col,(val,unit,lbl,cls) in zip(cols,kpis):
         st.markdown(f'<div class="kpi-card {cls}"><div class="kpi-val {vc}">{val}<span class="kpi-unit">{unit}</span></div><div class="kpi-lbl">{lbl}</div></div>',unsafe_allow_html=True)
 
 st.markdown("<br>",unsafe_allow_html=True)
-
-tab1,tab2,tab3,tab4,tab5=st.tabs([
-    "  ✦ Sizing Steps  ","  ∂ Sensitivity  ","  ◎ Charts  ","  ⬇ Export  ","  ⊕ References  "
-])
+tab1,tab2,tab3,tab4,tab5=st.tabs([" ✦ Sizing Steps "," ∂ Sensitivity "," ◎ Charts "," ⬇ Export "," ⊕ References "])
 
 # ═══ TAB 1 ═══
 with tab1:
@@ -426,7 +379,6 @@ with tab1:
             <span class="rpill rpill-blue">W_crew = {Wcrew:,.0f} <span class="rpill-unit">lbs</span></span>
           </div>
         </div>""",unsafe_allow_html=True)
-
         st.markdown(f"""
         <div class="card card-blue">
           <div class="card-title">Step 2 — Unit Conversions</div>
@@ -446,7 +398,6 @@ with tab1:
             <span class="ph-src">{Mtfo:.3f} × {Wto:,.0f}</span>
           </div>
         </div>""",unsafe_allow_html=True)
-
         st.markdown('<div class="card card-blue"><div class="card-title">Step 3 — Mission Phase Weight Fractions</div>',unsafe_allow_html=True)
         st.markdown("""<div style="display:grid;grid-template-columns:140px 90px 70px 90px 1fr;gap:0.5rem;padding:0.2rem 0 0.4rem;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:#6E7681;border-bottom:1px solid #30363D;font-weight:600"><span>Phase</span><span>Wᵢ/Wᵢ₋₁</span><span>Type</span><span>Source</span><span>Cumul. Mff</span></div>""",unsafe_allow_html=True)
         cum_mff=1.0
@@ -456,7 +407,6 @@ with tab1:
             bc='ph-badge-breguet' if ftype=='Breguet' else 'ph-badge-fixed'
             st.markdown(f"""<div class="ph-row"><span class="ph-name">{ph}</span><span class="ph-frac {fc}">{fv:.5f}</span><span class="ph-badge {bc}">{ftype}</span><span class="ph-src">{fsrc}</span><span style="font-family:'JetBrains Mono',monospace;font-size:0.74rem;color:#8B949E">{cum_mff:.5f}</span></div>""",unsafe_allow_html=True)
         st.markdown(f"""<div style="margin-top:0.6rem;padding-top:0.5rem;border-top:1px solid #21262D"><span class="rpill rpill-green">Mff = {RR['Mff']:.6f}</span><span style="font-size:0.69rem;color:#6E7681;margin-left:0.4rem">(product of all 8 phase fractions)</span></div></div>""",unsafe_allow_html=True)
-
         ok_cls="rpill-green" if conv else "rpill-red"
         st.markdown(f"""
         <div class="card {'card-green' if conv else 'card-red'}">
@@ -474,22 +424,16 @@ with tab1:
 
     with col_r:
         st.markdown("""<div class="card card-blue"><div class="card-title">Key Equations — Raymer Ch.2</div><div style="font-size:0.73rem;color:#8B949E;margin-bottom:0.3rem;font-weight:500">Cruise fraction (Eq. 2.9)</div><div class="eq-box">W₅/W₄ = 1 / exp[ Rc / (375·η_p/Cp·L/D) ]</div><div style="font-size:0.73rem;color:#8B949E;margin:0.5rem 0 0.3rem;font-weight:500">Loiter fraction (Eq. 2.11)</div><div class="eq-box">W₆/W₅ = 1 / exp[ E / (375·(1/V)·η_p/Cp·L/D) ]</div><div style="font-size:0.73rem;color:#8B949E;margin:0.5rem 0 0.3rem;font-weight:500">Regression (Table 2.2 / 2.15)</div><div class="eq-box">log₁₀(W_E) = A + B · log₁₀(W_TO)</div><div style="font-size:0.67rem;color:#6E7681;margin-top:0.4rem;line-height:1.65">R in statute miles · Cp in lbs/hp/hr<br>V in mph · E in hours</div></div>""",unsafe_allow_html=True)
-
-        st.markdown('<div class="card card-blue"><div class="card-title">Numeric Summary</div>',unsafe_allow_html=True)
         df_sum=pd.DataFrame({
             'Symbol':['W_TO','Mff','W_F','W_Fused','W_tfo','W_OE','W_E_tent','W_E_allow','ΔW_E','W_PL','W_crew'],
             'Value':[f"{Wto:,.1f}",f"{RR['Mff']:.6f}",f"{WF:,.1f}",f"{RR['WFu']:,.1f}",f"{Wtfo_r:,.2f}",f"{WOE:,.1f}",f"{WE:,.2f}",f"{RR['WEa']:,.2f}",f"{RR['diff']:+.2f}",f"{Wpl:,.1f}",f"{Wcrew:,.1f}"],
             'Unit':['lbs','—','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs']})
         st.dataframe(df_sum,hide_index=True,use_container_width=True,height=390)
-        st.markdown('</div>',unsafe_allow_html=True)
-
-        st.markdown('<div class="card card-blue"><div class="card-title">Key Design Ratios</div>',unsafe_allow_html=True)
         ratio_rows=[]
         for name,val_r,lo_r,hi_r in [('W_PL/W_TO',Wpl/Wto,0.10,0.25),('W_F/W_TO',WF/Wto,0.20,0.45),('W_E/W_TO',WE/Wto,0.45,0.65),('W_PL/W_E',Wpl/WE,0.15,0.40)]:
             ok_r=lo_r<=val_r<=hi_r
             ratio_rows.append({'Ratio':name,'Value':f'{val_r:.4f}','Typical':f'{lo_r:.2f}–{hi_r:.2f}','Status':'✓' if ok_r else ('▲' if val_r>hi_r else '▼')})
         st.dataframe(pd.DataFrame(ratio_rows),hide_index=True,use_container_width=True)
-        st.markdown('</div>',unsafe_allow_html=True)
 
 # ═══ TAB 2 ═══
 with tab2:
@@ -499,167 +443,39 @@ with tab2:
           <div class="sens-row" style="grid-template-columns:240px 1fr"><span class="sens-partial">C = 1−(1+M_res)(1−Mff)−M_tfo</span><span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;font-weight:700;color:#58A6FF">{S['C']:.5f} <span style="font-size:0.65rem;color:#6E7681">Eq 2.22</span></span></div>
           <div class="sens-row" style="grid-template-columns:240px 1fr"><span class="sens-partial">D = W_PL + W_crew</span><span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;font-weight:700;color:#58A6FF">{S['D']:,.0f} lbs <span style="font-size:0.65rem;color:#6E7681">Eq 2.23</span></span></div>
           <div class="sens-row" style="grid-template-columns:240px 1fr"><span class="sens-partial">C(1−B)W_TO − D</span><span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;font-weight:700;color:#E3B341">{S['C']*(1-float(B_v))*Wto-S['D']:,.0f}</span></div>
-          <div class="sens-row" style="grid-template-columns:240px 1fr;border-bottom:none"><span class="sens-partial">F  (sizing multiplier, Eq 2.44)</span><span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;font-weight:700;color:#BC8CFF">{S['F']:,.0f} lbs</span></div>
+          <div class="sens-row" style="grid-template-columns:240px 1fr;border-bottom:none"><span class="sens-partial">F (sizing multiplier, Eq 2.44)</span><span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;font-weight:700;color:#BC8CFF">{S['F']:,.0f} lbs</span></div>
         </div>""",unsafe_allow_html=True)
-
-        st.markdown('<div class="card card-amber"><div class="card-title">Range Phase — Breguet Partials (Table 2.20)</div>',unsafe_allow_html=True)
-        st.markdown("""<div style="display:grid;grid-template-columns:200px 105px 155px 70px;gap:0.5rem;font-size:0.60rem;letter-spacing:0.08em;text-transform:uppercase;color:#6E7681;padding-bottom:0.35rem;border-bottom:1px solid #30363D;font-weight:600"><span>Partial</span><span>Value</span><span>Units</span><span>Ref.</span></div>""",unsafe_allow_html=True)
         for partial,val,unit,eq in [('∂W_TO/∂Cp (cruise)',S['dCpR'],'lbs/(lbs/hp/hr)','Eq 2.49'),('∂W_TO/∂η_p (cruise)',S['dnpR'],'lbs','Eq 2.50'),('∂W_TO/∂(L/D) (cruise)',S['dLDR'],'lbs','Eq 2.51'),('∂W_TO/∂R',S['dR'],'lbs/nm','Eq 2.45')]:
             vc='sens-neg' if val<0 else 'sens-pos'
             st.markdown(f'<div class="sens-row"><span class="sens-partial">{partial}</span><span class="{vc}">{val:+,.1f}</span><span class="sens-unit">{unit}</span><span class="sens-eq">{eq}</span></div>',unsafe_allow_html=True)
-        st.markdown('</div>',unsafe_allow_html=True)
-
-        st.markdown('<div class="card card-amber"><div class="card-title">Loiter Phase — Breguet Partials (Table 2.20)</div>',unsafe_allow_html=True)
-        for partial,val,unit in [('∂W_TO/∂Cp (loiter)',S['dCpE'],'lbs/(lbs/hp/hr)'),('∂W_TO/∂η_p (loiter)',S['dnpE'],'lbs'),('∂W_TO/∂(L/D) (loiter)',S['dLDE'],'lbs')]:
-            vc='sens-neg' if val<0 else 'sens-pos'
-            st.markdown(f'<div class="sens-row"><span class="sens-partial">{partial}</span><span class="{vc}">{val:+,.1f}</span><span class="sens-unit">{unit}</span><span class="sens-eq">T2.20</span></div>',unsafe_allow_html=True)
-        st.markdown('</div>',unsafe_allow_html=True)
-
     with s2:
         st.markdown(f'<div class="card card-amber"><div class="card-title">Range Trade Study</div><div style="font-size:0.8rem;color:#C9D1D9;line-height:1.7;margin-bottom:0.5rem">∂W_TO/∂R = <b style="color:#58A6FF">{S["dR"]:+.2f} lbs/nm</b></div>',unsafe_allow_html=True)
         for dr in [-200,-100,100,200]:
             dw=S['dR']*dr; col_v='#3FB950' if dw<0 else '#E3B341'
             st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:center;padding:0.28rem 0;border-bottom:1px solid #21262D;font-size:0.8rem"><span style="color:#8B949E">ΔR = {dr:+d} nm</span><span style="font-family:JetBrains Mono,monospace;font-weight:700;color:{col_v}">{dw:+,.1f} lbs</span></div>',unsafe_allow_html=True)
-        st.markdown('</div>',unsafe_allow_html=True)
 
-        dR_c=st.slider("Custom ΔR (nm)",-600,600,0,step=25)
-        if dR_c!=0:
-            dW_c=S['dR']*dR_c; col2='#3FB950' if dW_c<0 else '#E3B341'
-            bg2='rgba(63,185,80,.07)' if dW_c<0 else 'rgba(227,179,65,.07)'
-            bd2='rgba(63,185,80,.25)' if dW_c<0 else 'rgba(227,179,65,.25)'
-            st.markdown(f'<div style="background:{bg2};border:1px solid {bd2};border-radius:7px;padding:0.55rem 1rem;font-family:JetBrains Mono,monospace;font-size:0.82rem;color:{col2};margin-top:0.3rem">ΔR={dR_c:+d} nm → ΔW_TO={S["dR"]*dR_c:+,.1f} lbs → W_TO~{Wto+S["dR"]*dR_c:,.0f} lbs</div>',unsafe_allow_html=True)
-
-        st.markdown('<div class="sec-div" style="margin-top:1rem">Tornado — Parameter Influence Ranking</div>',unsafe_allow_html=True)
-        t_lbl=['Cp·Cruise','η_p·Cruise','L/D·Cruise','ΔR(200nm)','Cp·Loiter','η_p·Loiter','L/D·Loiter']
-        t_val=[S['dCpR'],S['dnpR'],S['dLDR'],S['dR']*200,S['dCpE'],S['dnpE'],S['dLDE']]
-        idx=sorted(range(7),key=lambda i:abs(t_val[i]))
-        t_lbl=[t_lbl[i] for i in idx]; t_val=[t_val[i] for i in idx]
-        fig_t=go.Figure(go.Bar(x=t_val,y=t_lbl,orientation='h',
-            marker_color=['#1F6FEB' if v>=0 else '#3FB950' for v in t_val],
-            marker_line_color='rgba(0,0,0,0)',
-            text=[f'{abs(v):,.0f}' for v in t_val],textposition='outside',textfont=dict(size=9,color='#8B949E')))
-        fig_t.add_vline(x=0,line_color='#30363D',line_width=1)
-        fig_t.update_layout(paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',height=265,showlegend=False,margin=dict(l=8,r=55,t=10,b=10),font=dict(family='JetBrains Mono',size=9,color='#8B949E'),xaxis=dict(gridcolor='#21262D',linecolor='#30363D',title='ΔW_TO (lbs)',title_font=dict(size=8),tickfont=dict(size=8)),yaxis=dict(gridcolor='rgba(0,0,0,0)',linecolor='#30363D',tickfont=dict(size=9)))
-        st.plotly_chart(fig_t,use_container_width=True)
-        st.markdown('<div style="font-size:0.68rem;color:#6E7681">Blue = increases W_TO · Green = decreases W_TO (favourable)</div>',unsafe_allow_html=True)
-
-# ═══ TAB 3 — CHARTS ═══
+# ═══ TAB 3 ═══
 with tab3:
-    PL=dict(paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='#161B22',font=dict(family='JetBrains Mono',color='#8B949E',size=9),margin=dict(l=52,r=16,t=38,b=44),hoverlabel=dict(bgcolor='#1C2333',font_color='#F0F6FC',font_size=10,bordercolor='#30363D'))
-    AX=dict(gridcolor='#21262D',linecolor='#30363D',zerolinecolor='#30363D',tickfont=dict(size=8))
-
-    ch1,ch2=st.columns(2,gap="medium")
-    with ch1:
-        st.markdown('<div class="sec-div">Mission Phase Weight Fractions</div>',unsafe_allow_html=True)
-        phases_l=list(RR['phases'].keys())
-        fvals=[v for v,_,_ in RR['phases'].values()]
-        types=[t for _,t,_ in RR['phases'].values()]
-        cum_p=[1.0]
-        for fv in fvals: cum_p.append(cum_p[-1]*fv)
-        fig_m=make_subplots(rows=1,cols=2,column_widths=[0.55,0.45],subplot_titles=["Wᵢ/Wᵢ₋₁ per phase","Cumulative Mff"],horizontal_spacing=0.12)
-        fig_m.add_trace(go.Bar(x=phases_l,y=fvals,marker_color=['#3FB950' if t=='Breguet' else '#388BFD' for t in types],marker_line_color='rgba(0,0,0,0)',text=[f'{v:.4f}' for v in fvals],textposition='outside',textfont=dict(size=7.5,color='#C9D1D9'),hovertemplate='<b>%{x}</b><br>%{y:.5f}<extra></extra>'),row=1,col=1)
-        fig_m.add_trace(go.Scatter(x=['Ramp']+phases_l,y=cum_p,mode='lines+markers',line=dict(color='#388BFD',width=2.5),marker=dict(color='#F0F6FC',size=5,line=dict(color='#388BFD',width=2)),fill='tozeroy',fillcolor='rgba(56,139,253,.08)',hovertemplate='<b>%{x}</b><br>Cumul.=%{y:.5f}<extra></extra>'),row=1,col=2)
-        fig_m.add_hline(y=RR['Mff'],line_dash='dot',line_color='#3FB950',line_width=1.2,annotation_text=f'Mff={RR["Mff"]:.4f}',annotation_font_color='#3FB950',annotation_font_size=8,row=1,col=2)
-        fig_m.update_layout(**PL,height=265,showlegend=False)
-        fig_m.update_xaxes(**AX); fig_m.update_yaxes(**AX)
-        fig_m.update_yaxes(range=[0.75,1.04],row=1,col=1)
-        fig_m.update_yaxes(range=[0.65,1.06],row=1,col=2)
-        fig_m.update_annotations(font_size=9,font_color='#8B949E',font_family='JetBrains Mono')
-        st.plotly_chart(fig_m,use_container_width=True)
-        st.markdown('<div style="font-size:0.68rem;color:#6E7681;margin-top:-0.4rem">Blue=fixed (T2.1) · Green=Breguet variable (Eq2.9/2.11) · Dashed=final Mff</div>',unsafe_allow_html=True)
-
-        st.markdown('<div class="sec-div">W_TO vs Design Range</div>',unsafe_allow_html=True)
-        rr_arr=np.linspace(200,min(3200,float(R_nm)*2.8),55); ww_arr=[]
-        for rv in rr_arr:
-            try:
-                w,r=solve_Wto({**P,'R':float(rv)}); ww_arr.append(w if abs(r['diff'])<80 else float('nan'))
-            except: ww_arr.append(float('nan'))
-        fig_r=go.Figure()
-        fig_r.add_trace(go.Scatter(x=rr_arr,y=ww_arr,mode='lines',line=dict(color='#388BFD',width=2.2),fill='tozeroy',fillcolor='rgba(56,139,253,.06)',hovertemplate='Range:%{x:.0f}nm<br>W_TO:%{y:,.0f}lbs<extra></extra>'))
-        fig_r.add_vline(x=float(R_nm),line_dash='dash',line_color='#E3B341',line_width=1.4,annotation_text=f'  {int(R_nm)} nm',annotation_font_color='#E3B341',annotation_font_size=8.5)
-        fig_r.add_scatter(x=[float(R_nm)],y=[Wto],mode='markers',marker=dict(color='#E3B341',size=11,line=dict(color='#161B22',width=2),symbol='diamond'),showlegend=False)
-        fig_r.update_layout(**PL,height=225,showlegend=False,xaxis=dict(**AX,title='Range (nm)',title_font=dict(size=8.5,color='#8B949E')),yaxis=dict(**AX,title='W_TO (lbs)',title_font=dict(size=8.5,color='#8B949E')))
-        st.plotly_chart(fig_r,use_container_width=True)
-
-        st.markdown('<div class="sec-div">W_TO vs Passengers</div>',unsafe_allow_html=True)
-        pxa=np.arange(max(5,int(npax)-20),int(npax)+30,2); wxr=[]
-        for n_ in pxa:
-            try:
-                w,r=solve_Wto({**P,'npax':int(n_)}); wxr.append(w if abs(r['diff'])<80 else float('nan'))
-            except: wxr.append(float('nan'))
-        fig_px=go.Figure()
-        fig_px.add_trace(go.Scatter(x=pxa,y=wxr,mode='lines',line=dict(color='#3FB950',width=2.2),fill='tozeroy',fillcolor='rgba(63,185,80,.06)',hovertemplate='Pax:%{x}<br>W_TO:%{y:,.0f}lbs<extra></extra>'))
-        fig_px.add_vline(x=int(npax),line_dash='dash',line_color='#E3B341',line_width=1.3,annotation_text=f'  {int(npax)} pax',annotation_font_color='#E3B341',annotation_font_size=8.5)
-        fig_px.add_scatter(x=[int(npax)],y=[Wto],mode='markers',marker=dict(color='#E3B341',size=10,line=dict(color='#161B22',width=2),symbol='diamond'),showlegend=False)
-        fig_px.update_layout(**PL,height=215,showlegend=False,xaxis=dict(**AX,title='Passengers',title_font=dict(size=8.5,color='#8B949E')),yaxis=dict(**AX,title='W_TO (lbs)',title_font=dict(size=8.5,color='#8B949E')))
-        st.plotly_chart(fig_px,use_container_width=True)
-
-    with ch2:
-        st.markdown('<div class="sec-div">W_TO Composition — Weight Breakdown</div>',unsafe_allow_html=True)
-        fig_p=go.Figure(go.Pie(
-            labels=['Empty W_E','Usable Fuel','Trapped Fuel','Crew','Payload'],
-            values=[WE,RR['WFu'],Wtfo_r,Wcrew,Wpl],hole=0.56,
-            marker=dict(colors=['#388BFD','#58A6FF','#79C0FF','#3FB950','#56D364'],line=dict(color='#161B22',width=2.5)),
-            textfont=dict(size=9.5,family='JetBrains Mono',color='#F0F6FC'),
-            textinfo='label+percent',rotation=105,
-            hovertemplate='<b>%{label}</b><br>%{value:,.0f} lbs<br>%{percent}<extra></extra>'))
-        fig_p.update_layout(paper_bgcolor='rgba(0,0,0,0)',font=dict(family='JetBrains Mono',color='#8B949E'),showlegend=True,legend=dict(orientation='v',x=1.02,y=0.5,font=dict(size=8.5,color='#C9D1D9'),bgcolor='rgba(0,0,0,0)'),height=290,margin=dict(t=10,b=10,l=10,r=120),annotations=[dict(text=f'<b>{Wto:,.0f}</b><br>lbs',x=0.44,y=0.5,showarrow=False,font=dict(size=13,color='#F0F6FC',family='JetBrains Mono'))])
-        st.plotly_chart(fig_p,use_container_width=True)
-
-        st.markdown('<div class="sec-div">Weight Progression & Fuel Burn Through Mission</div>',unsafe_allow_html=True)
-        fv_list=[v for v,_,_ in RR['phases'].values()]
-        pl_list=['Ramp']+list(RR['phases'].keys())
-        cum_w=[Wto]
-        for fv in fv_list: cum_w.append(cum_w[-1]*fv)
-        burn_w=[Wto-c for c in cum_w]
-        fig_w=make_subplots(rows=2,cols=1,subplot_titles=['Aircraft Weight (lbs)','Cumul. Fuel Burn (lbs)'],vertical_spacing=0.12,shared_xaxes=True)
-        fig_w.add_trace(go.Scatter(x=pl_list,y=cum_w,mode='lines+markers',line=dict(color='#388BFD',width=2.2),marker=dict(color='#F0F6FC',size=6,line=dict(color='#388BFD',width=2)),fill='tozeroy',fillcolor='rgba(56,139,253,.07)',hovertemplate='%{x}<br>%{y:,.0f} lbs<extra></extra>'),row=1,col=1)
-        # Highlight cruise
-        cidx=pl_list.index('Cruise')
-        fig_w.add_trace(go.Scatter(x=[pl_list[cidx],pl_list[cidx+1]],y=[cum_w[cidx],cum_w[cidx+1]],mode='lines',line=dict(color='#3FB950',width=3.5),showlegend=False),row=1,col=1)
-        fig_w.add_trace(go.Scatter(x=pl_list,y=burn_w,mode='lines+markers',line=dict(color='#E3B341',width=2.2),marker=dict(color='#F0F6FC',size=6,line=dict(color='#E3B341',width=2)),fill='tozeroy',fillcolor='rgba(227,179,65,.07)',hovertemplate='%{x}<br>%{y:,.0f} lbs<extra></extra>'),row=2,col=1)
-        fig_w.update_layout(**PL,height=410,showlegend=False)
-        fig_w.update_xaxes(**AX); fig_w.update_yaxes(**AX)
-        fig_w.update_annotations(font_size=9,font_color='#8B949E',font_family='JetBrains Mono')
-        st.plotly_chart(fig_w,use_container_width=True)
-        st.markdown('<div style="font-size:0.68rem;color:#6E7681;margin-top:-0.4rem">Green=Cruise (Breguet) · Amber=Cumul. fuel · Diamond=design point</div>',unsafe_allow_html=True)
-
-        st.markdown('<div class="sec-div">3D Surface — W_TO = f(L/D, Cp) at Cruise</div>',unsafe_allow_html=True)
-        cpa=np.linspace(0.35,0.90,16); lda=np.linspace(8,22,16)
-        Z=np.zeros((len(cpa),len(lda)))
-        for i,cp in enumerate(cpa):
-            for j,ld in enumerate(lda):
-                try:
-                    w,r=solve_Wto({**P,'Cpc':float(cp),'LDc':float(ld)}); Z[i,j]=w if abs(r['diff'])<80 else float('nan')
-                except: Z[i,j]=float('nan')
-        fig4=go.Figure(go.Surface(x=lda,y=cpa,z=Z,colorscale=[[0,'#0D1117'],[0.25,'#1F6FEB'],[0.6,'#388BFD'],[0.85,'#E3B341'],[1,'#F85149']],opacity=0.88,showscale=True,colorbar=dict(len=0.65,thickness=10,tickfont=dict(size=8,color='#8B949E'),title=dict(text='W_TO(lbs)',font=dict(size=8,color='#8B949E'))),hovertemplate='L/D:%{x:.1f}<br>Cp:%{y:.2f}<br>W_TO:%{z:,.0f}lbs<extra></extra>'))
-        fig4.add_scatter3d(x=[float(LDc)],y=[float(Cpc)],z=[Wto],mode='markers',marker=dict(color='#E3B341',size=7,symbol='diamond'),showlegend=False)
-        fig4.update_layout(paper_bgcolor='rgba(0,0,0,0)',font=dict(family='JetBrains Mono',color='#8B949E',size=9),scene=dict(xaxis=dict(title='L/D',backgroundcolor='#161B22',gridcolor='#21262D',linecolor='#30363D'),yaxis=dict(title='Cp',backgroundcolor='#161B22',gridcolor='#21262D',linecolor='#30363D'),zaxis=dict(title='W_TO(lbs)',backgroundcolor='#0D1117',gridcolor='#21262D',linecolor='#30363D'),bgcolor='#161B22',camera=dict(eye=dict(x=1.4,y=-1.6,z=0.7))),margin=dict(l=0,r=0,t=8,b=0),height=330)
-        st.plotly_chart(fig4,use_container_width=True)
-        st.markdown('<div style="font-size:0.68rem;color:#6E7681;margin-top:-0.4rem">Low Cp + High L/D = min W_TO. Amber diamond = design point. Cliff = no solution.</div>',unsafe_allow_html=True)
+    st.markdown('<div class="sec-div">Mission Phase Weight Fractions</div>',unsafe_allow_html=True)
+    phases_l=list(RR['phases'].keys())
+    fvals=[v for v,_,_ in RR['phases'].values()]
+    cum_p=[1.0]
+    for fv in fvals: cum_p.append(cum_p[-1]*fv)
+    fig_m=make_subplots(rows=1,cols=2,subplot_titles=["Wᵢ/Wᵢ₋₁ per phase","Cumulative Mff"])
+    fig_m.add_trace(go.Bar(x=phases_l,y=fvals,marker_color='#388BFD'),row=1,col=1)
+    fig_m.add_trace(go.Scatter(x=['Ramp']+phases_l,y=cum_p,mode='lines+markers',line=dict(color='#388BFD')),row=1,col=2)
+    st.plotly_chart(fig_m,use_container_width=True)
 
 # ═══ TAB 4 ═══
 with tab4:
     ex1,ex2=st.columns([1,1],gap="medium")
     with ex1:
-        st.markdown('<div class="card card-blue"><div class="card-title">Download — CSV</div>',unsafe_allow_html=True)
-        rows={'Parameter':['W_TO','Mff','W_F','W_F_usable','W_tfo','W_OE','W_E_tent','W_E_allow','delta_WE','W_PL','W_crew','Rc_sm','Vm_mph','dWTO_dCp_R','dWTO_dnp_R','dWTO_dLD_R','dWTO_dR','dWTO_dCp_E','dWTO_dnp_E','dWTO_dLD_E','F','C','D'],
-              'Value':[Wto,RR['Mff'],WF,RR['WFu'],Wtfo_r,WOE,WE,RR['WEa'],RR['diff'],Wpl,Wcrew,RR['Rc'],RR['Vm'],S['dCpR'],S['dnpR'],S['dLDR'],S['dR'],S['dCpE'],S['dnpE'],S['dLDE'],S['F'],S['C'],S['D']],
-              'Units':['lbs','—','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs','s.m.','mph','lbs/(lbs/hp/hr)','lbs','lbs','lbs/nm','lbs/(lbs/hp/hr)','lbs','lbs','lbs','—','lbs']}
+        rows={'Parameter':['W_TO','Mff','W_F','W_F_usable','W_tfo','W_OE','W_E_tent','W_E_allow','delta_WE','W_PL','W_crew','Rc_sm','Vm_mph','F','C','D'],
+              'Value':[Wto,RR['Mff'],WF,RR['WFu'],Wtfo_r,WOE,WE,RR['WEa'],RR['diff'],Wpl,Wcrew,RR['Rc'],RR['Vm'],S['F'],S['C'],S['D']],
+              'Units':['lbs','—','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs','s.m.','mph','—','—','lbs']}
         b=io.StringIO(); pd.DataFrame(rows).to_csv(b,index=False)
-        st.download_button("⬇  Full Results (CSV)",b.getvalue(),"aerosizer_hw28.csv","text/csv",use_container_width=True)
-        st.markdown('<br>',unsafe_allow_html=True)
-        b2=io.StringIO()
-        pd.DataFrame({'Phase':list(RR['phases'].keys()),'Wi/Wi-1':[f for f,_,_ in RR['phases'].values()],'Type':[t for _,t,_ in RR['phases'].values()],'Ref':[r for _,_,r in RR['phases'].values()]}).to_csv(b2,index=False)
-        st.download_button("⬇  Phase Fractions (CSV)",b2.getvalue(),"phases.csv","text/csv",use_container_width=True)
-        st.markdown('</div>',unsafe_allow_html=True)
-        st.markdown('<div class="card card-blue"><div class="card-title">Active Configuration</div>',unsafe_allow_html=True)
-        st.dataframe(pd.DataFrame({'Parameter':list(P.keys()),'Value':[str(v) for v in P.values()]}),hide_index=True,use_container_width=True)
-        st.markdown('</div>',unsafe_allow_html=True)
-
+        st.download_button("⬇ Full Results (CSV)",b.getvalue(),"aerosizer_hw28.csv","text/csv",use_container_width=True)
     with ex2:
-        st.markdown('<div class="card card-blue"><div class="card-title">PDF Report — A4 Engineering Format</div>',unsafe_allow_html=True)
-        st.markdown('<div style="font-size:0.8rem;color:#8B949E;line-height:1.8;margin-bottom:0.8rem">① Title block · ② All inputs · ③ Steps 1–6 · ④ Phase fractions (Breguet highlighted) · ⑤ Design ratios · ⑥ Sensitivity partials · ⑦ References</div>',unsafe_allow_html=True)
         def make_pdf():
             buf=io.BytesIO()
             doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=2.0*cm,rightMargin=2.0*cm,topMargin=2.2*cm,bottomMargin=2.2*cm)
@@ -667,14 +483,44 @@ with tab4:
             CN=colors.HexColor('#0D1B2A'); CB=colors.HexColor('#1F6FEB'); CS=colors.HexColor('#388BFD')
             CG=colors.HexColor('#475569'); CL=colors.HexColor('#94A3B8'); CR=colors.HexColor('#CBD5E1')
             CF=colors.HexColor('#F8FAFF'); CW=colors.white
-            CGR=colors.HexColor('#D1FAE5'); CA=colors.HexColor('#FEF3C7')
-            CO=colors.HexColor('#065F46'); CWN=colors.HexColor('#92400E')
             sty=getSampleStyleSheet()
             def ps(nm,**kw): return ParagraphStyle(nm,parent=sty['Normal'],**kw)
             sH1=ps('H1',fontSize=10,fontName='Helvetica-Bold',textColor=CB,spaceBefore=10,spaceAfter=4)
-            sBODY=ps('BO',fontSize=8,textColor=CG,leading=12)
             sSUB=ps('SU',fontSize=8,textColor=CG,leading=12,spaceAfter=2)
-            sSTAT=ps('ST',fontSize=9,fontName='Helvetica-Bold',textColor=CO if conv else CWN,spaceAfter=3)
-            sCAP=ps('CA',fontSize=7,textColor=CL,leading=10,spaceBefore=2,spaceAfter=6)
             def ts(hdr=CN):
-                return TableStyle([('BACKGROUND',(0,0),(-1,0),hdr),('TEXTCOLOR',(0,0),(-1,0),CW),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTNAME',(0,1),(-1,-1),'Helvetica'),('FONTSIZE',(0,0),(-1,-1),7.5),('LEADING',(0,0),(-1,-1),11),('TEXTCOLOR',(0,1),(-1,-1),CG),('ROWBACKGROUNDS',(0,1),(-1,-1),[CW,CF]),('GRID',(0,0),(-1,-1),0.25,CR),('LINEBELOW',(0,0),(-1,0),0.8,CS),('LEFTP
+                return TableStyle([
+                    ('BACKGROUND',(0,0),(-1,0),hdr),
+                    ('TEXTCOLOR',(0,0),(-1,0),CW),
+                    ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+                    ('FONTNAME',(0,1),(-1,-1),'Helvetica'),
+                    ('FONTSIZE',(0,0),(-1,-1),7.5),
+                    ('LEADING',(0,0),(-1,-1),11),
+                    ('TEXTCOLOR',(0,1),(-1,-1),CG),
+                    ('ROWBACKGROUNDS',(0,1),(-1,-1),[CW,CF]),
+                    ('GRID',(0,0),(-1,-1),0.25,CR),
+                    ('LINEBELOW',(0,0),(-1,0),0.8,CS),
+                    ('LEFTPADDING',(0,0),(-1,-1),5),
+                    ('RIGHTPADDING',(0,0),(-1,-1),5),
+                    ('TOPPADDING',(0,0),(-1,-1),3.5),
+                    ('BOTTOMPADDING',(0,0),(-1,-1),3.5),
+                    ('VALIGN',(0,0),(-1,-1),'MIDDLE')
+                ])
+            story=[]
+            hd=Table([[Paragraph('<b>AEROSIZER PRO</b>',ps('TX',fontSize=16,fontName='Helvetica-Bold',textColor=CN,leading=20)),
+                       Paragraph('DOC: ASP-HW28 REV A<br/>STATUS: '+('RELEASED' if conv else 'DRAFT'),ps('TX2',fontSize=7,textColor=CL,leading=10,alignment=TA_RIGHT))]],colWidths=[PW*0.60,PW*0.40])
+            story.append(hd)
+            story.append(HRFlowable(width=PW,thickness=2.5,color=CB,spaceBefore=4,spaceAfter=2))
+            story.append(Paragraph('Preliminary Aircraft Weight Sizing — Raymer (2018) Ch.2',sSUB))
+            story.append(Paragraph('1 Mission Inputs',sH1))
+            t_in=Table([['Parameter','Value','Parameter','Value'],['Passengers',str(int(npax)),'Design range (nm)',str(int(R_nm))],['Cruise L/D',f'{LDc:.1f}','Loiter L/D',f'{LDl:.1f}']],colWidths=[PW*0.3,PW*0.2,PW*0.3,PW*0.2])
+            t_in.setStyle(ts()); story.append(t_in)
+            story.append(Paragraph('2 Sizing Results',sH1))
+            t_cv=Table([['Quantity','Value (lbs)'],['W_TO (Gross)',f'{Wto:,.2f}'],['W_F (Total)',f'{WF:,.2f}'],['W_E (Empty)',f'{WE:,.2f}']],colWidths=[PW*0.6,PW*0.4])
+            t_cv.setStyle(ts(hdr=colors.HexColor('#334155'))); story.append(t_cv)
+            doc.build(story); buf.seek(0); return buf.read()
+        st.download_button("⬇ Generate & Download PDF (A4)",make_pdf(),"aerosizer_hw28_report.pdf","application/pdf",use_container_width=True)
+
+# ═══ TAB 5 ═══
+with tab5:
+    for code,title,eq in [("Eq 2.9","Cruise — Breguet","W₅/W₄ = 1/exp[ Rc/(375·η_p/Cp·L/D) ]"),("Eq 2.11","Loiter — Breguet","W₆/W₅ = 1/exp[ E/(375·(1/V)·η_p/Cp·L/D) ]")]:
+        st.markdown(f'<div class="card card-blue"><div class="card-title">{code} — {title}</div><div class="eq-box">{eq}</div></div>',unsafe_allow_html=True)
