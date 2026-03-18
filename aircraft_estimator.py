@@ -15,6 +15,20 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 st.set_page_config(page_title="AeroSizer Pro", page_icon="✈", layout="wide",
                    initial_sidebar_state="expanded")
 
+# ── كود تتبع Google Analytics ──
+GA_ID = "G-C98XM2XQFF"
+GA_SCRIPT = f"""
+<script async src="https://www.googletagmanager.com/gtag/js?id={GA_ID}"></script>
+<script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){{dataLayer.push(arguments);}}
+    gtag('js', new Date());
+    gtag('config', '{GA_ID}');
+</script>
+"""
+st.components.v1.html(GA_SCRIPT, width=0, height=0)
+# ───────────────────────────────
+
 CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
@@ -663,62 +677,4 @@ with tab4:
             sSTAT=ps('ST',fontSize=9,fontName='Helvetica-Bold',textColor=CO if conv else CWN,spaceAfter=3)
             sCAP=ps('CA',fontSize=7,textColor=CL,leading=10,spaceBefore=2,spaceAfter=6)
             def ts(hdr=CN):
-                return TableStyle([('BACKGROUND',(0,0),(-1,0),hdr),('TEXTCOLOR',(0,0),(-1,0),CW),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTNAME',(0,1),(-1,-1),'Helvetica'),('FONTSIZE',(0,0),(-1,-1),7.5),('LEADING',(0,0),(-1,-1),11),('TEXTCOLOR',(0,1),(-1,-1),CG),('ROWBACKGROUNDS',(0,1),(-1,-1),[CW,CF]),('GRID',(0,0),(-1,-1),0.25,CR),('LINEBELOW',(0,0),(-1,0),0.8,CS),('LEFTPADDING',(0,0),(-1,-1),5),('RIGHTPADDING',(0,0),(-1,-1),5),('TOPPADDING',(0,0),(-1,-1),3.5),('BOTTOMPADDING',(0,0),(-1,-1),3.5),('VALIGN',(0,0),(-1,-1),'MIDDLE')])
-            def rule(): return HRFlowable(width=PW,thickness=0.4,color=CR,spaceBefore=3,spaceAfter=3)
-            story=[]
-            hd=Table([[Paragraph('<b>AEROSIZER PRO</b>',ps('TX',fontSize=16,fontName='Helvetica-Bold',textColor=CN,leading=20)),Paragraph('DOC: ASP-HW28 REV A<br/>CLASS: Conceptual<br/>STATUS: '+('RELEASED' if conv else 'DRAFT'),ps('TX2',fontSize=7,textColor=CL,leading=10,alignment=TA_RIGHT))]],colWidths=[PW*0.60,PW*0.40])
-            hd.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0),('TOPPADDING',(0,0),(-1,-1),0),('BOTTOMPADDING',(0,0),(-1,-1),0)]))
-            story.append(hd)
-            story.append(HRFlowable(width=PW,thickness=2.5,color=CB,spaceBefore=4,spaceAfter=2))
-            story.append(Paragraph('Preliminary Aircraft Weight Sizing — Breguet Range/Endurance · Propeller-Driven · Raymer (2018) Ch.2 — Problem 2.8',sSUB))
-            story.append(HRFlowable(width=PW,thickness=0.4,color=CR,spaceBefore=2,spaceAfter=8))
-            story.append(Paragraph('1   Mission Inputs',sH1)); story.append(rule())
-            CW4=[PW*0.30,PW*0.17,PW*0.30,PW*0.17]
-            t_in=Table([['Parameter','Value','Parameter','Value'],['Passengers',str(int(npax)),'Design range (nm)',str(int(R_nm))],['Pax body wt (lbs)',str(int(wpax)),'Loiter endurance (hr)',f'{El:.2f}'],['Baggage wt (lbs)',str(int(wbag)),'Loiter speed (kts)',str(int(Vl))],['Flight crew',str(int(ncrew)),'Cruise L/D',f'{LDc:.1f}'],['Cabin attendants',str(int(natt)),'Loiter L/D',f'{LDl:.1f}'],['Reg. A',f'{A_v:.4f}','Cruise Cp',f'{Cpc:.2f}'],['Reg. B',f'{B_v:.4f}','Loiter Cp',f'{Cpl:.2f}'],['M_tfo',f'{Mtfo:.3f}','Cruise η_p',f'{npc:.2f}'],['M_res',f'{Mres:.3f}','Loiter η_p',f'{npl:.2f}']],colWidths=CW4)
-            t_in.setStyle(ts()); story+=[t_in,Spacer(1,0.2*cm)]
-            story.append(Paragraph('2   Sizing Steps 1–6',sH1)); story.append(rule())
-            t_pl=Table([['Item','Weight (lbs)','Notes'],[f'{npax} pax×({int(wpax)}+{int(wbag)})',f'{int(npax)*(int(wpax)+int(wbag)):,}','cabin'],[f'{ncrew} pilots×205',f'{int(ncrew)*205:,}','crew'],[f'{natt} att×200',f'{int(natt)*200:,}','cabin crew'],['W_PL',f'{Wpl:,.0f}',''],['W_crew',f'{Wcrew:,.0f}',''],['W_tfo',f'{Wtfo_r:,.2f}','trapped fuel']],colWidths=[PW*0.52,PW*0.24,PW*0.20])
-            t_pl.setStyle(ts(hdr=colors.HexColor('#334155'))); story+=[t_pl,Spacer(1,0.1*cm)]
-            cum_ph=1.0; ph_rows=[['Phase','Wᵢ/Wᵢ₋₁','Cumul.','Type','Source']]
-            for ph,(fv,ftype,fsrc) in RR['phases'].items():
-                cum_ph*=fv; ph_rows.append([ph,f'{fv:.5f}',f'{cum_ph:.5f}',ftype,fsrc])
-            t_ph=Table(ph_rows,colWidths=[PW*0.22,PW*0.14,PW*0.14,PW*0.18,PW*0.28])
-            t_ph.setStyle(ts(hdr=CB))
-            for ri,row in enumerate(ph_rows[1:],start=1):
-                if row[3]=='Breguet': t_ph.setStyle(TableStyle([('BACKGROUND',(0,ri),(-1,ri),colors.HexColor('#ECFDF5')),('TEXTCOLOR',(3,ri),(3,ri),CO),('FONTNAME',(0,ri),(-1,ri),'Helvetica-Bold')]))
-            story+=[t_ph,Paragraph(f'Final Mff={RR["Mff"]:.6f}',ps('MF',fontSize=8,fontName='Helvetica-Bold',textColor=CB,spaceBefore=3,spaceAfter=4))]
-            t_cv=Table([['Quantity','Value (lbs)','Expression'],['W_F (total)',f'{WF:,.2f}','W_Fused+W_tfo'],['W_OE (tent.)',f'{WOE:,.2f}','W_TO−W_F−W_PL'],['W_E (tent.)',f'{WE:,.2f}','W_OE−W_tfo−W_crew'],['W_E (allow.)',f'{RR["WEa"]:,.2f}','10^[(logW_TO−A)/B]'],['ΔW_E',f'{RR["diff"]:+.2f}','W_E_allow−W_E_tent']],colWidths=[PW*0.44,PW*0.22,PW*0.30])
-            t_cv.setStyle(ts(hdr=colors.HexColor('#334155')))
-            t_cv.setStyle(TableStyle([('BACKGROUND',(0,5),(-1,5),CGR if conv else CA),('TEXTCOLOR',(1,5),(1,5),CO if conv else CWN),('FONTNAME',(0,5),(-1,5),'Helvetica-Bold')]))
-            story+=[t_cv,Spacer(1,0.1*cm),Paragraph('CONVERGED ✓' if conv else 'NOT CONVERGED ⚠',sSTAT)]
-            story.append(Paragraph('3   Design Ratios',sH1)); story.append(rule())
-            rr_data=[['Ratio','Value','Typical','Check']]
-            for nm,vl,lo,hi in [('W_PL/W_TO',Wpl/Wto,0.10,0.25),('W_F/W_TO',WF/Wto,0.20,0.45),('W_E/W_TO',WE/Wto,0.45,0.65),('W_PL/W_E',Wpl/WE,0.15,0.40)]:
-                ok_r=lo<=vl<=hi; rr_data.append([nm,f'{vl:.4f}',f'{lo:.2f}–{hi:.2f}','✓' if ok_r else ('▲' if vl>hi else '▼')])
-            t_r=Table(rr_data,colWidths=[PW*0.28,PW*0.18,PW*0.28,PW*0.22]); t_r.setStyle(ts()); story+=[t_r,Spacer(1,0.15*cm)]
-            story.append(Paragraph('4   Sensitivity Partials (Raymer Table 2.20)',sH1)); story.append(rule())
-            s_rows=[['Partial','Value','Units','Ref.'],('∂W_TO/∂Cp(cruise)',f'{S["dCpR"]:+,.1f}','lbs/(lbs/hp/hr)','Eq2.49'),('∂W_TO/∂η_p(cruise)',f'{S["dnpR"]:+,.1f}','lbs','Eq2.50'),('∂W_TO/∂(L/D)(cruise)',f'{S["dLDR"]:+,.1f}','lbs','Eq2.51'),('∂W_TO/∂R',f'{S["dR"]:+,.2f}','lbs/nm','Eq2.45'),('∂W_TO/∂Cp(loiter)',f'{S["dCpE"]:+,.1f}','lbs/(lbs/hp/hr)','T2.20'),('∂W_TO/∂η_p(loiter)',f'{S["dnpE"]:+,.1f}','lbs','T2.20'),('∂W_TO/∂(L/D)(loiter)',f'{S["dLDE"]:+,.1f}','lbs','T2.20')]
-            t_s=Table(s_rows,colWidths=[PW*0.34,PW*0.16,PW*0.34,PW*0.12]); t_s.setStyle(ts(hdr=CB))
-            for ri,row in enumerate(s_rows[1:],start=1):
-                try:
-                    if float(row[1].replace(',','').replace('+',''))<0: t_s.setStyle(TableStyle([('TEXTCOLOR',(1,ri),(1,ri),CO)]))
-                except: pass
-            story+=[t_s,Spacer(1,0.15*cm)]
-            story.append(Paragraph('5   References',sH1)); story.append(rule())
-            refs=[['[1]','Raymer,D.P.(2018).Aircraft Design:A Conceptual Approach,6th Ed.AIAA.'],['[2]','Roskam,J.(2003).Airplane Design,Part I.DAR Corp.'],['[3]','Breguet,L.(1923).Calcul du Poids de Combustible.Comptes Rendus.']]
-            t5=Table([['Ref.','Citation']]+refs,colWidths=[PW*0.08,PW*0.92]); t5.setStyle(ts(hdr=colors.HexColor('#334155'))); story.append(t5)
-            story+=[Spacer(1,0.3*cm),HRFlowable(width=PW,thickness=0.5,color=CR),Paragraph('Conceptual-level sizing only. Not for regulatory/structural use. Breguet Eq.2.9/2.11 for propeller aircraft only.',ps('DIS',fontSize=6.5,textColor=CL,leading=9.5,spaceBefore=3))]
-            doc.build(story); buf.seek(0); return buf.read()
-
-        st.download_button("⬇  Generate & Download PDF (A4)",make_pdf(),"aerosizer_hw28_report.pdf","application/pdf",use_container_width=True)
-        st.markdown('</div>',unsafe_allow_html=True)
-
-# ═══ TAB 5 ═══
-with tab5:
-    r1,r2=st.columns(2,gap="medium")
-    with r1:
-        for code,title,eq,desc in [("Eq 2.9","Cruise — Breguet","W₅/W₄ = 1/exp[ Rc/(375·η_p/Cp·L/D) ]","Rc in s.m. · Cp in lbs/hp/hr"),("Eq 2.11","Loiter — Breguet","W₆/W₅ = 1/exp[ E/(375·(1/V)·η_p/Cp·L/D) ]","E in hr · V in mph"),("Eq 2.22","C factor","C = 1−(1+M_res)(1−Mff)−M_tfo",""),("Eq 2.23","D factor","D = W_PL + W_crew","")]:
-            st.markdown(f'<div class="card card-blue"><div class="card-title">{code} — {title}</div><div class="eq-box">{eq}</div><div style="font-size:0.72rem;color:#6E7681;margin-top:0.3rem">{desc}</div></div>',unsafe_allow_html=True)
-    with r2:
-        for code,title,eq,desc in [("Eq 2.44","F sizing multiplier","F = −B·W_TO²·(1+M_res)·Mff / [C·W_TO·(1−B)−D]",""),("Eq 2.45","∂W_TO/∂R","∂W_TO/∂R = F·Cp/(375·η_p·L/D)","lbs/nm"),("Eq 2.49","∂W_TO/∂Cp","∂W_TO/∂Cp = F·R/(375·η_p·L/D)","lbs/(lbs/hp/hr)"),("Eq 2.50/51","∂W_TO/∂η_p & ∂(L/D)","∂/∂η_p = −F·R·Cp/(375·η_p²·L/D)","Negative = reduces W_TO (green)")]:
-            st.markdown(f'<div class="card card-blue"><div class="card-title">{code} — {title}</div><div class="eq-box">{eq}</div><div style="font-size:0.72rem;color:#6E7681;margin-top:0.3rem">{desc}</div></div>',unsafe_allow_html=True)
+                return TableStyle([('BACKGROUND',(0,0),(-1,0),hdr),('TEXTCOLOR',(0,0),(-1,0),CW),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTNAME',(0,1),(-1,-1),'Helvetica'),('FONTSIZE',(0,0),(-1,-1),7.5),('LEADING',(0,0),(-1,-1),11),('TEXTCOLOR',(0,1),(-1,-1),CG),('ROWBACKGROUNDS',(0,1),(-1,-1),[CW,CF]),('GRID',(0,0),(-1,-1),0.25,CR),('LINEBELOW',(0,0),(-1,0),0.8,CS),('LEFTP
