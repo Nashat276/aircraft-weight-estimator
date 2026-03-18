@@ -142,13 +142,27 @@ st.markdown(CSS, unsafe_allow_html=True)
 
 # ── PHYSICS ──
 def compute_mission(p):
-    Wpl   = p['npax']*(p['wpax']+p['wbag']) + p['ncrew']*205 + p['natt']*200
-    Wcrew = p['ncrew']*205 + p['natt']*200
+    """
+    Exact Raymer HW 2.8 weight build-up (Steps 1-6).
+    
+    Structure (matches HW paper exactly):
+      Wpl   = passengers × (body + baggage)       ← cabin payload only
+      Wcrew = (pilots + attendants) × 205 lbs     ← all crew @ 205 lbs
+      Wtfo  = Wto × Mtfo                          ← trapped fuel & oil
+      WF    = Wto×(1-Mff) + Wto×Mr×(1-Mff)      ← usable + reserve fuel
+                                                     (Wtfo NOT in WF)
+      WOE   = Wto - WF - Wpl                      ← Step 4 operating empty
+      WE    = WOE - Wtfo - Wcrew                  ← Step 5 empty tent.
+      WEa   = 10^[(log Wto - A) / B]              ← Step 6 allowable
+      diff  = WEa - WE  → converged when |diff| < 0.5 lbs
+    """
+    Wpl   = p['npax']*(p['wpax']+p['wbag'])          # passengers only
+    Wcrew = (p['ncrew'] + p['natt']) * 205            # all crew @ 205 lbs
     Wtfo  = p['Wto']*p['Mtfo']
-    Rc    = p['R']*1.15078
-    Vm    = p['Vl']*1.15078
-    W5    = 1.0/math.exp(Rc/(375.0*(p['npc']/p['Cpc'])*p['LDc']))
-    W6    = 1.0/math.exp(p['El']/(375.0*(1.0/Vm)*(p['npl']/p['Cpl'])*p['LDl']))
+    Rc    = p['R']*1.15078                            # nm → statute miles
+    Vm    = p['Vl']*1.15078                           # kts → mph
+    W5    = 1.0/math.exp(Rc/(375.0*(p['npc']/p['Cpc'])*p['LDc']))   # Eq 2.9
+    W6    = 1.0/math.exp(p['El']/(375.0*(1.0/Vm)*(p['npl']/p['Cpl'])*p['LDl']))  # Eq 2.11
     phases = {
         'Engine Start':(0.990,'Fixed','T2.1'),
         'Taxi':        (0.995,'Fixed','T2.1'),
@@ -161,35 +175,77 @@ def compute_mission(p):
     }
     Mff=1.0
     for v,_,_ in phases.values(): Mff*=v
-    WFu=p['Wto']*(1.0-Mff)
-    WF =WFu+p['Wto']*p['Mr']*(1.0-Mff)+Wtfo
-    WOE=p['Wto']-WF-Wpl
-    WE =WOE-Wtfo-Wcrew
-    WEa=10.0**((math.log10(p['Wto'])-p['A'])/p['B'])
+    WFu  = p['Wto']*(1.0-Mff)                        # usable fuel
+    WF   = WFu + p['Wto']*p['Mr']*(1.0-Mff)          # total fuel (Wtfo separate)
+    WOE  = p['Wto'] - WF - Wpl                        # Step 4 operating empty
+    WE   = WOE - Wtfo - Wcrew                         # Step 5 empty weight (tent.)
+    WEa  = 10.0**((math.log10(p['Wto'])-p['A'])/p['B'])  # Step 6 allowable
     return dict(Wpl=Wpl,Wcrew=Wcrew,Wtfo=Wtfo,Mff=Mff,
                 WF=WF,WFu=WFu,WOE=WOE,WE=WE,WEa=WEa,
                 diff=WEa-WE,phases=phases,Rc=Rc,Vm=Vm)
 
-def solve_Wto(p,tol=0.5,n=500):
-    pp=dict(p); prev_d,prev_w,lo,hi=None,None,None,None
-    for w in range(8000,600001,2000):
-        pp['Wto']=float(w); d=compute_mission(pp)['diff']
-        if prev_d is not None and prev_d*d<=0:
-            lo,hi=float(prev_w),float(w); break
-        prev_d,prev_w=d,w
+def solve_Wto(p, tol=0.5, n=500):
+    """
+    Bisection solver for W_TO.
+    p['Wto'] is the USER GUESS — used to seed a smarter search bracket.
+    Final result is the true converged root (independent of guess once bracket found).
+    
+    HW 2.8 logic: iterate until W_E_tentative == W_E_allowable (diff < tol).
+    Changing any input (R, LDc, npax, etc.) → different Mff → different W_TO.
+    Changing Wto_g only affects search speed, NOT the converged answer.
+    """
+    pp = dict(p)
+    guess = float(p.get('Wto', 48550))
+    
+    # Smart bracket: search around guess first (±60%), then full range
+    lo, hi = None, None
+    prev_d, prev_w = None, None
+    
+    # Build search range centered near guess for faster convergence
+    lo_bound = max(5000, int(guess * 0.3))
+    hi_bound = min(600000, int(guess * 3.5))
+    step = max(500, int((hi_bound - lo_bound) / 300))
+    
+    for w in range(lo_bound, hi_bound + step, step):
+        pp['Wto'] = float(w)
+        d = compute_mission(pp)['diff']
+        if prev_d is not None and prev_d * d <= 0:
+            lo, hi = float(prev_w), float(w)
+            break
+        prev_d, prev_w = d, w
+    
+    # Fallback: full range scan if bracket not found
     if lo is None:
-        pp['Wto']=float(p.get('Wto',48550)); return float(p.get('Wto',48550)),compute_mission(pp)
+        prev_d, prev_w = None, None
+        for w in range(5000, 600001, 1000):
+            pp['Wto'] = float(w)
+            d = compute_mission(pp)['diff']
+            if prev_d is not None and prev_d * d <= 0:
+                lo, hi = float(prev_w), float(w)
+                break
+            prev_d, prev_w = d, w
+    
+    if lo is None:
+        # No root found — return guess with its mission values
+        pp['Wto'] = guess
+        return guess, compute_mission(pp)
+    
+    # Bisection to converge
     for _ in range(n):
-        m=(lo+hi)/2.0; pp['Wto']=m; r=compute_mission(pp)
-        if abs(r['diff'])<tol: return m,r
-        if r['diff']>0: lo=m
+        m = (lo + hi) / 2.0
+        pp['Wto'] = m
+        r = compute_mission(pp)
+        if abs(r['diff']) < tol:
+            return m, r
+        if r['diff'] > 0:
+            lo = m
         else: hi=m
     return m,compute_mission(pp)
 
 def sensitivity(p,Wto):
     RR=compute_mission({**p,'Wto':Wto})
     Mff=RR['Mff']; Rc=RR['Rc']; Vm=RR['Vm']
-    Wpl=RR['Wpl']; Wcrew=RR['Wcrew']
+    Wpl=RR['Wpl']; Wcrew=RR['Wcrew']   # Wpl=pax only; Wcrew=(pilots+att)*205
     C=1.0-(1.0+p['Mr'])*(1.0-Mff)-p['Mtfo']
     D=Wpl+Wcrew
     dn=C*Wto*(1.0-p['B'])-D
@@ -246,12 +302,17 @@ P = dict(npax=int(npax),wpax=float(wpax),wbag=float(wbag),
          El=float(El),LDl=float(LDl),Cpl=float(Cpl),npl=float(npl),
          A=float(A_v),B=float(B_v),Wto=float(Wto_g))
 
-P_key=str(sorted({k:v for k,v in P.items() if k!='Wto'}.items()))
-if 'res' not in st.session_state or st.session_state.get('_key')!=P_key or calc:
-    Wto,RR=solve_Wto(P); S=sensitivity(P,Wto)
-    st.session_state['res']=(Wto,RR,S); st.session_state['_key']=P_key
+# Every param change (incl. Wto_g) triggers recalc.
+# Wto_g is the bisection search start — final answer independent of it
+# as long as it's in a reasonable bracket.
+P_key = str(sorted(P.items()))
+if 'res' not in st.session_state or st.session_state.get('_key') != P_key or calc:
+    Wto, RR = solve_Wto(P)
+    S = sensitivity(P, Wto)
+    st.session_state['res']  = (Wto, RR, S)
+    st.session_state['_key'] = P_key
 else:
-    Wto,RR,S=st.session_state['res']
+    Wto, RR, S = st.session_state['res']
 
 conv=abs(RR['diff'])<1.0
 WE=RR['WE']; WOE=RR['WOE']; WF=RR['WF']
@@ -289,7 +350,7 @@ st.markdown(f"""
 <div class="main-header">
   <div>
     <div class="mh-title">AERO<span>SIZER</span> <span style="font-size:0.9rem;font-weight:400;color:#8B949E">Pro</span></div>
-    <div class="mh-sub">Raymer Ch.2 · Breguet Range/Endurance · Propeller-Driven Aircraft · Problem 2.8</div>
+    <div class="mh-sub">&nbsp;</div>
   </div>
   <div style="display:flex;align-items:center;gap:1rem">
     <div style="text-align:right">
