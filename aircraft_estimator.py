@@ -16,16 +16,13 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 st.set_page_config(page_title="AeroSizer Pro", page_icon="✈", layout="wide",
                    initial_sidebar_state="expanded")
 
-# 2. Google Analytics — st.markdown بدل st.components.v1.html
-GA_ID = "G-C98XM2XQFF"
-st.markdown(f"""
-<script async src="https://www.googletagmanager.com/gtag/js?id={GA_ID}"></script>
-<script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){{dataLayer.push(arguments);}}
-    gtag('js', new Date());
-    gtag('config', '{GA_ID}', {{'send_page_view': true}});
-</script>
+# 2. Google Tag Manager
+st.markdown("""
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-T8JSQMHD');</script>
 """, unsafe_allow_html=True)
 
 # 3. CSS
