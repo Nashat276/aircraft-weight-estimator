@@ -73,7 +73,7 @@ div.stDownloadButton > button:hover { background:#1B2B4B !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Plotly theme ────────────────────────────────────────────────
+# ── Plotly theme ──────────────────────────────────────────────────
 _B = dict(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='#FAFBFC',
           font=dict(family='DM Mono', color='#475569', size=9.5),
           margin=dict(l=52,r=14,t=30,b=40),
@@ -89,7 +89,7 @@ def pf(fig, h=220, xt='', yt='', yr=None):
     if yr: fig.update_yaxes(range=yr)
     return fig
 
-# ── Physics ─────────────────────────────────────────────────────
+# ── Physics ───────────────────────────────────────────────────────
 def mission(p):
     Wpl   = p['npax']*(p['wpax']+p['wbag']) + p['ncrew']*205 + p['natt']*200
     Wcrew = p['ncrew']*205 + p['natt']*200
@@ -150,7 +150,7 @@ def sens(p, Wto):
         dLDE= -F*E*Vm*p['Cpl']/(375.0*p['npl']*p['LDl']**2),
     )
 
-# ── Defaults & sidebar ──────────────────────────────────────────
+# ── Defaults & sidebar ────────────────────────────────────────────
 D = dict(npax=34,wpax=175,wbag=30,ncrew=2,natt=1,Mtfo=0.005,Mr=0.0,
          R=1100,Vl=250,LDc=13,Cpc=0.60,npc=0.85,
          El=0.75,LDl=16,Cpl=0.65,npl=0.77,A=0.3774,B=0.9647)
@@ -188,16 +188,20 @@ with st.sidebar:
     st.markdown("<br>", unsafe_allow_html=True)
     calc = st.button("⟳  Calculate", use_container_width=True, type="primary")
 
+# ── FIX: Build current param dict and always recalculate when inputs change ──
 P = dict(npax=int(npax), wpax=float(wpax), wbag=float(wbag),
          ncrew=int(ncrew), natt=int(natt), Mtfo=float(Mtfo), Mr=0.0,
          R=float(R_nm), Vl=float(Vl), LDc=float(LDc), Cpc=float(Cpc), npc=float(npc),
          El=float(El), LDl=float(LDl), Cpl=float(Cpl), npl=float(npl),
          A=float(A_v), B=float(B_v), Wto=float(Wto_g))
 
-if 'res' not in st.session_state or calc:
+# ── KEY FIX: recalculate whenever P changes, not just when button pressed ──
+P_key = str(sorted(P.items()))
+if 'res' not in st.session_state or st.session_state.get('P_key') != P_key or calc:
     Wto, RR = solve(P)
     S = sens(P, Wto)
-    st.session_state['res'] = (Wto, RR, S, dict(P))
+    st.session_state['res']   = (Wto, RR, S, dict(P))
+    st.session_state['P_key'] = P_key
 else:
     Wto, RR, S, _ = st.session_state['res']
 
@@ -205,7 +209,7 @@ conv  = abs(RR['diff']) < 5
 WE    = RR['WE'];  WOE = RR['WOE']; WF  = RR['WF']
 Wpl   = RR['Wpl']; Wcrew=RR['Wcrew']; Wtfo_r=RR['Wtfo']
 
-# ── HERO card ───────────────────────────────────────────────────
+# ── HERO card ─────────────────────────────────────────────────────
 _sc = '#15803D' if conv else '#C2410C'
 _sb = '#F0FDF4' if conv else '#FFF7ED'
 _st = '✓ converged' if conv else '⚠ check inputs'
@@ -314,7 +318,7 @@ with tab1:
                      f"{RR['diff']:+.1f} lbs",f"{RR['Mff']:.5f}",
                      '✓ OK' if conv else '✗ Retry'],
         }),hide_index=True,use_container_width=True)
-        st.markdown('<div class="cn">Converged when W_E_tentative ≈ W_E_allowable. ΔWE &lt; 0.5 lbs accepted.</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="cn">Converged when W_E_tentative ≈ W_E_allowable. ΔWE < 0.5 lbs accepted.</div></div>', unsafe_allow_html=True)
 
         st.markdown('<div class="card"><div class="ct">Phase Fractions Detail</div>', unsafe_allow_html=True)
         src={'Engine Start':'T2.1','Taxi':'T2.1','Takeoff':'T2.1','Climb':'Fig2.2',
@@ -519,200 +523,391 @@ with tab4:
         st.markdown('</div>', unsafe_allow_html=True)
 
     with e2:
-        st.markdown('<div class="card"><div class="ct">Generate PDF Report — A4</div>', unsafe_allow_html=True)
+        st.markdown('<div class="card"><div class="ct">Generate PDF Report — A4 Engineering Format</div>', unsafe_allow_html=True)
         st.markdown("""<div style="font-size:0.8rem;color:#374151;line-height:1.75">
 Report sections:<br>
-&nbsp; ① Methodology overview<br>
-&nbsp; ② All mission inputs<br>
-&nbsp; ③ Sizing result &amp; convergence<br>
-&nbsp; ④ Complete weight statement<br>
-&nbsp; ⑤ Phase weight fractions<br>
-&nbsp; ⑥ Key design ratios<br>
-&nbsp; ⑦ Sensitivity partials<br>
-&nbsp; ⑧ References
+&nbsp; ① Title block & document control<br>
+&nbsp; ② Methodology overview<br>
+&nbsp; ③ All mission inputs<br>
+&nbsp; ④ Sizing result & convergence<br>
+&nbsp; ⑤ Complete weight statement<br>
+&nbsp; ⑥ Phase weight fractions<br>
+&nbsp; ⑦ Key design ratios<br>
+&nbsp; ⑧ Sensitivity partials<br>
+&nbsp; ⑨ References
 </div><br>""", unsafe_allow_html=True)
 
         def make_pdf():
             buf = io.BytesIO()
             doc = SimpleDocTemplate(buf, pagesize=A4,
-                leftMargin=2.2*cm, rightMargin=2.2*cm,
+                leftMargin=2.0*cm, rightMargin=2.0*cm,
                 topMargin=2.2*cm, bottomMargin=2.2*cm)
-            PW = 16.6*cm
+            PW = 17.0*cm
 
             sty = getSampleStyleSheet()
             def ps(nm, **kw):
                 return ParagraphStyle(nm, parent=sty['Normal'], **kw)
 
-            # ── Styles ── (FIX: increased leading & spaceAfter on title to prevent overlap)
-            sTITLE = ps('TI',
-                        fontSize=22,
-                        fontName='Helvetica-Bold',
-                        textColor=colors.HexColor('#0D1B2A'),
-                        leading=30,          # ← explicit line-height prevents descender bleed
-                        spaceBefore=0,
-                        spaceAfter=8,        # ← was 2; now 8 pt gap below title
-                        alignment=TA_LEFT)
+            # ── Colour palette ──
+            C_NAVY   = colors.HexColor('#0D1B2A')
+            C_BLUE   = colors.HexColor('#0369A1')
+            C_SKY    = colors.HexColor('#0EA5E9')
+            C_GRAY   = colors.HexColor('#475569')
+            C_LGRAY  = colors.HexColor('#94A3B8')
+            C_RULE   = colors.HexColor('#CBD5E1')
+            C_FAINT  = colors.HexColor('#F8FAFC')
+            C_STRIPE = colors.HexColor('#EFF8FF')
+            C_GREEN  = colors.HexColor('#15803D' if conv else '#C2410C')
+            C_WHITE  = colors.white
 
-            sSUB   = ps('SU',
-                        fontSize=8.5,
-                        textColor=colors.HexColor('#64748B'),
-                        leading=13,
-                        spaceBefore=0,
-                        spaceAfter=4)
+            # ── Typography ──
+            sTITLE = ps('TI', fontSize=20, fontName='Helvetica-Bold',
+                        textColor=C_NAVY, leading=26, spaceBefore=0, spaceAfter=4, alignment=TA_LEFT)
+            sDOCNUM= ps('DN', fontSize=7.5, fontName='Helvetica',
+                        textColor=C_LGRAY, leading=11, spaceAfter=0, alignment=TA_RIGHT)
+            sSUB   = ps('SU', fontSize=8.5, textColor=C_GRAY, leading=13, spaceAfter=2)
+            sH1    = ps('H1', fontSize=10, fontName='Helvetica-Bold',
+                        textColor=C_BLUE, spaceBefore=12, spaceAfter=4)
+            sH2    = ps('H2', fontSize=8.5, fontName='Helvetica-Bold',
+                        textColor=C_NAVY, spaceBefore=7, spaceAfter=3)
+            sBODY  = ps('BO', fontSize=8.0, textColor=C_GRAY, leading=12.5)
+            sMONO  = ps('MO', fontSize=7.5, fontName='Helvetica',
+                        textColor=C_BLUE, leading=11)
+            sSTATUS= ps('ST', fontSize=8.5, fontName='Helvetica-Bold',
+                        textColor=C_GREEN, spaceAfter=4)
+            sREF   = ps('RF', fontSize=7.5, textColor=C_GRAY, leading=11.5)
+            sCAP   = ps('CA', fontSize=7.0, textColor=C_LGRAY, leading=10,
+                        spaceBefore=2, spaceAfter=6, alignment=TA_LEFT)
 
-            sMETH  = ps('ME', fontSize=8.5, textColor=colors.HexColor('#374151'),
-                         leading=13, spaceAfter=0)
-            sH1    = ps('H1', fontSize=11, fontName='Helvetica-Bold',
-                         textColor=colors.HexColor('#0369A1'),
-                         spaceBefore=14, spaceAfter=5)
-            sH2    = ps('H2', fontSize=9.5, fontName='Helvetica-Bold',
-                         textColor=colors.HexColor('#0369A1'),
-                         spaceBefore=8, spaceAfter=3)
-            sBODY  = ps('BO', fontSize=8.5, textColor=colors.HexColor('#374151'),
-                         leading=13)
-            sSTATUS= ps('ST', fontSize=9, fontName='Helvetica-Bold',
-                         textColor=colors.HexColor('#15803D' if conv else '#C2410C'),
-                         spaceAfter=0)
-            sREF   = ps('RF', fontSize=8, textColor=colors.HexColor('#374151'),
-                         leading=12)
-
-            # ── Table style ──
-            def make_ts(hdr_bg='#0D1B2A'):
-                return TableStyle([
-                    ('BACKGROUND',    (0,0), (-1,0), colors.HexColor(hdr_bg)),
-                    ('TEXTCOLOR',     (0,0), (-1,0), colors.white),
-                    ('FONTNAME',      (0,0), (-1,0), 'Helvetica-Bold'),
-                    ('FONTNAME',      (0,1), (-1,-1), 'Helvetica'),
-                    ('FONTSIZE',      (0,0), (-1,-1), 7.5),
-                    ('GRID',          (0,0), (-1,-1), 0.3, colors.HexColor('#CBD5E1')),
-                    ('ROWBACKGROUNDS',(0,1), (-1,-1), [colors.white, colors.HexColor('#F8FAFC')]),
-                    ('LEFTPADDING',   (0,0), (-1,-1), 5),
-                    ('RIGHTPADDING',  (0,0), (-1,-1), 5),
-                    ('TOPPADDING',    (0,0), (-1,-1), 3),
-                    ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-                    ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+            # ── Engineering table style ──
+            def make_ts(hdr_bg=C_NAVY, alt=True):
+                ts = TableStyle([
+                    # Header
+                    ('BACKGROUND',   (0,0), (-1,0), hdr_bg),
+                    ('TEXTCOLOR',    (0,0), (-1,0), C_WHITE),
+                    ('FONTNAME',     (0,0), (-1,0), 'Helvetica-Bold'),
+                    ('FONTSIZE',     (0,0), (-1,-1), 7.5),
+                    ('LEADING',      (0,0), (-1,-1), 11),
+                    # Data rows
+                    ('FONTNAME',     (0,1), (-1,-1), 'Helvetica'),
+                    ('TEXTCOLOR',    (0,1), (-1,-1), C_GRAY),
+                    # Grid — thin hairlines
+                    ('GRID',         (0,0), (-1,-1), 0.25, C_RULE),
+                    ('LINEBELOW',    (0,0), (-1,0),  0.8,  C_SKY),
+                    # Padding
+                    ('LEFTPADDING',  (0,0), (-1,-1), 5),
+                    ('RIGHTPADDING', (0,0), (-1,-1), 5),
+                    ('TOPPADDING',   (0,0), (-1,-1), 3.5),
+                    ('BOTTOMPADDING',(0,0), (-1,-1), 3.5),
+                    ('VALIGN',       (0,0), (-1,-1), 'MIDDLE'),
                 ])
+                if alt:
+                    ts.add('ROWBACKGROUNDS', (0,1), (-1,-1), [C_WHITE, C_FAINT])
+                return ts
+
+            # ── helper: thin horizontal rule ──
+            def rule(w=PW, t=0.5, c=C_RULE):
+                return HRFlowable(width=w, thickness=t, color=c, spaceAfter=4, spaceBefore=4)
 
             story = []
 
-            # ── Cover block ── (FIX: Spacer between title and subtitle)
-            story += [
-                Paragraph("AeroSizer Pro", sTITLE),
-                Spacer(1, 0.10*cm),   # ← extra cushion after title
-                Paragraph("Preliminary Aircraft Weight Estimation Report", sSUB),
-                Spacer(1, 0.05*cm),
-                Paragraph(
-                    "Breguet Range / Endurance Method  \u00b7  "
-                    "Propeller-Driven Aircraft  \u00b7  "
-                    "Raymer 2018 / Roskam Pt. I",
-                    sSUB),
-                Spacer(1, 0.15*cm),
-                HRFlowable(width=PW, thickness=2, color=colors.HexColor('#0EA5E9')),
-                Spacer(1, 0.3*cm),
+            # ════════════════════════════════════════
+            # TITLE BLOCK — engineering drawing style
+            # ════════════════════════════════════════
+            title_data = [
+                [
+                    Paragraph("<b>AEROSIZER PRO</b>", ps('TX',
+                        fontSize=18, fontName='Helvetica-Bold',
+                        textColor=C_NAVY, leading=22)),
+                    Paragraph(
+                        "DOCUMENT NO: ASP-001<br/>"
+                        "REVISION: A<br/>"
+                        "CLASS: Conceptual Design<br/>"
+                        "STATUS: " + ("RELEASED" if conv else "PRELIMINARY"),
+                        ps('TX2', fontSize=7.5, textColor=C_LGRAY,
+                           leading=11, alignment=TA_RIGHT))
+                ],
             ]
+            title_tbl = Table(title_data, colWidths=[PW*0.62, PW*0.38])
+            title_tbl.setStyle(TableStyle([
+                ('VALIGN',         (0,0), (-1,-1), 'MIDDLE'),
+                ('LEFTPADDING',    (0,0), (-1,-1), 0),
+                ('RIGHTPADDING',   (0,0), (-1,-1), 0),
+                ('TOPPADDING',     (0,0), (-1,-1), 0),
+                ('BOTTOMPADDING',  (0,0), (-1,-1), 0),
+            ]))
+            story.append(title_tbl)
+            story.append(HRFlowable(width=PW, thickness=2.5, color=C_SKY,
+                                    spaceAfter=3, spaceBefore=5))
 
-            # ── 1. Methodology ──
-            story += [
-                Paragraph("1.  Methodology", sH1),
-                Paragraph(
-                    "Iterative Breguet weight-fraction method (Raymer 2018, Ch. 2).  "
-                    "W_TO is found by bisection until W_E_tentative equals W_E_regression.  "
-                    "Mff is the product of all phase fractions Wi/Wi-1.  "
-                    "Cruise fraction from Breguet Eq. 2.9 (propeller range).  "
-                    "Loiter fraction from Breguet Eq. 2.11 (propeller endurance).  "
-                    "Fixed phases from Raymer Table 2.1.  "
-                    "Regression: log10(WE) = A + B*log10(WTO)  (Raymer Table 2.2).", sMETH),
-                Spacer(1, 0.2*cm),
+            # Sub-header row
+            sub_data = [[
+                Paragraph("Preliminary Aircraft Weight Estimation — Propeller-Driven Transport", sSUB),
+                Paragraph("Breguet Range / Endurance Method  ·  Raymer 2018 Ch.2", sSUB),
+            ]]
+            sub_tbl = Table(sub_data, colWidths=[PW*0.60, PW*0.40])
+            sub_tbl.setStyle(TableStyle([
+                ('VALIGN',(0,0),(-1,-1),'TOP'),
+                ('LEFTPADDING',(0,0),(-1,-1),0),
+                ('RIGHTPADDING',(0,0),(-1,-1),0),
+                ('TOPPADDING',(0,0),(-1,-1),1),
+                ('BOTTOMPADDING',(0,0),(-1,-1),1),
+                ('ALIGN',(1,0),(1,-1),'RIGHT'),
+            ]))
+            story.append(sub_tbl)
+            story.append(HRFlowable(width=PW, thickness=0.4, color=C_RULE,
+                                    spaceAfter=10, spaceBefore=3))
+
+            # ════════════════════════════════
+            # SECTION 1 — Methodology
+            # ════════════════════════════════
+            story.append(Paragraph("1   Methodology", sH1))
+            story.append(rule())
+            story.append(Paragraph(
+                "The iterative Breguet weight-fraction method (Raymer 2018, §2.3) determines the "
+                "gross takeoff weight W_TO for a propeller-driven aircraft. "
+                "W_TO is solved by bisection until the tentative empty weight W_E equals the "
+                "regression allowable W_E = 10^{(log₁₀W_TO − A) / B}. "
+                "The mission fuel fraction Mff is the product of all phase fractions W_i/W_{i-1}. "
+                "Variable phases (cruise, loiter) are evaluated with the Breguet propeller equations; "
+                "fixed phases use Raymer Table 2.1 constants.",
+                sBODY))
+            story.append(Spacer(1, 0.15*cm))
+
+            # Equation box
+            eq_data = [
+                ["Cruise (Eq. 2.9)",  "W₅/W₄ = 1 / exp[ R·Cp / (375·η_p·L/D) ]"],
+                ["Loiter (Eq. 2.11)", "W₆/W₅ = 1 / exp[ E·Cp / (375·(1/V)·η_p·L/D) ]"],
+                ["Regression",        "log₁₀(W_E) = A + B · log₁₀(W_TO)             (Raymer T2.2)"],
             ]
+            eq_tbl = Table(eq_data, colWidths=[PW*0.24, PW*0.76])
+            eq_tbl.setStyle(TableStyle([
+                ('BACKGROUND',   (0,0), (-1,-1), C_STRIPE),
+                ('BACKGROUND',   (0,0), (0,-1),  colors.HexColor('#DBEAFE')),
+                ('FONTNAME',     (0,0), (0,-1),  'Helvetica-Bold'),
+                ('FONTNAME',     (1,0), (1,-1),  'Helvetica'),
+                ('FONTSIZE',     (0,0), (-1,-1), 7.5),
+                ('TEXTCOLOR',    (0,0), (0,-1),  C_BLUE),
+                ('TEXTCOLOR',    (1,0), (1,-1),  C_NAVY),
+                ('GRID',         (0,0), (-1,-1), 0.25, C_RULE),
+                ('LEFTPADDING',  (0,0), (-1,-1), 6),
+                ('RIGHTPADDING', (0,0), (-1,-1), 6),
+                ('TOPPADDING',   (0,0), (-1,-1), 3),
+                ('BOTTOMPADDING',(0,0), (-1,-1), 3),
+                ('LINEAFTER',    (0,0), (0,-1),  1.0, C_SKY),
+            ]))
+            story.append(eq_tbl)
+            story.append(sCAP.__class__('EQ-CAP',parent=sty['Normal'],
+                fontSize=7.0, textColor=C_LGRAY, leading=10,
+                spaceBefore=2, spaceAfter=8))
+            story.append(Paragraph(
+                "R in statute miles; Cp in lbs/hp/hr; η_p = propeller efficiency; "
+                "E in hours; V in mph; R = range in statute miles.",
+                sCAP))
 
-            # ── 2. Inputs ──
-            story.append(Paragraph("2.  Mission Inputs", sH1))
-            CW4 = [PW*0.27, PW*0.19, PW*0.27, PW*0.19]
+            # ════════════════════════════════
+            # SECTION 2 — Inputs
+            # ════════════════════════════════
+            story.append(Paragraph("2   Mission Inputs", sH1))
+            story.append(rule())
+            CW4 = [PW*0.30, PW*0.17, PW*0.30, PW*0.17]
             t1 = Table([
-                ['Parameter',         'Value',        'Parameter',          'Value'],
-                ['Passengers',        str(int(npax)), 'Range (nm)',          str(int(R_nm))],
-                ['Pax weight (lbs)',  str(int(wpax)), 'Loiter endur. (hr)', f'{float(El):.2f}'],
-                ['Baggage (lbs)',     str(int(wbag)), 'Cruise L/D',         f'{float(LDc):.1f}'],
-                ['Flight crew',       str(int(ncrew)),'Loiter L/D',         f'{float(LDl):.1f}'],
-                ['Cabin attendants',  str(int(natt)), 'Cruise SFC Cp',      f'{float(Cpc):.2f}'],
-                ['Reg. constant A',   f'{float(A_v):.4f}', 'Loiter SFC Cp', f'{float(Cpl):.2f}'],
-                ['Reg. constant B',   f'{float(B_v):.4f}', 'Cruise eta_p',  f'{float(npc):.2f}'],
-                ['M_tfo',             f'{float(Mtfo):.3f}','Loiter eta_p',   f'{float(npl):.2f}'],
+                ['Parameter',          'Value',         'Parameter',          'Value'],
+                ['Passengers',          str(int(npax)),  'Design range (nm)',   str(int(R_nm))],
+                ['Pax body wt (lbs)',   str(int(wpax)),  'Loiter endur. (hr)',  f'{float(El):.2f}'],
+                ['Baggage wt (lbs)',    str(int(wbag)),  'Loiter speed (kts)',  str(int(Vl))],
+                ['Flight crew',         str(int(ncrew)), 'Cruise L/D',          f'{float(LDc):.1f}'],
+                ['Cabin attendants',    str(int(natt)),  'Loiter L/D',          f'{float(LDl):.1f}'],
+                ['Reg. constant A',     f'{float(A_v):.4f}', 'Cruise SFC Cp',   f'{float(Cpc):.2f}'],
+                ['Reg. constant B',     f'{float(B_v):.4f}', 'Loiter SFC Cp',   f'{float(Cpl):.2f}'],
+                ['Trapped fuel M_tfo',  f'{float(Mtfo):.3f}','Cruise η_p',      f'{float(npc):.2f}'],
+                ['Reserve ratio M_r',   '0.000',         'Loiter η_p',          f'{float(npl):.2f}'],
             ], colWidths=CW4)
-            t1.setStyle(make_ts())
-            story += [t1, Spacer(1, 0.2*cm)]
+            t1.setStyle(make_ts(hdr_bg=C_NAVY))
+            story.append(t1)
+            story.append(Spacer(1, 0.2*cm))
 
-            # ── 3. Result ──
-            story.append(Paragraph("3.  Sizing Result", sH1))
-            status = 'CONVERGED' if conv else 'NOT CONVERGED'
-            story += [
-                Paragraph(f"W_TO = {Wto:,.0f} lbs   |   Mff = {RR['Mff']:.5f}   |   DWE = {RR['diff']:+.1f} lbs", sBODY),
-                Spacer(1, 0.1*cm),
-                Paragraph(status, sSTATUS),
-                Spacer(1, 0.15*cm),
+            # ════════════════════════════════
+            # SECTION 3 — Result
+            # ════════════════════════════════
+            story.append(Paragraph("3   Sizing Result & Convergence", sH1))
+            story.append(rule())
+
+            # Result summary box
+            res_data = [
+                ['W_TO (lbs)', 'Mff', 'ΔW_E (lbs)', 'Convergence'],
+                [f'{Wto:,.0f}', f'{RR["Mff"]:.5f}', f'{RR["diff"]:+.1f}',
+                 'CONVERGED ✓' if conv else 'NOT CONVERGED ✗'],
             ]
+            res_tbl = Table(res_data, colWidths=[PW*0.26]*4)
+            res_tbl.setStyle(TableStyle([
+                ('BACKGROUND',   (0,0), (-1,0), C_NAVY),
+                ('TEXTCOLOR',    (0,0), (-1,0), C_WHITE),
+                ('FONTNAME',     (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTNAME',     (0,1), (-1,1), 'Helvetica-Bold'),
+                ('FONTSIZE',     (0,0), (-1,-1), 8),
+                ('TEXTCOLOR',    (0,1), (2,1),  C_BLUE),
+                ('TEXTCOLOR',    (3,1), (3,1),  C_GREEN),
+                ('BACKGROUND',   (0,1), (-1,1), C_STRIPE),
+                ('GRID',         (0,0), (-1,-1), 0.4, C_RULE),
+                ('LINEBELOW',    (0,0), (-1,0),  1.0, C_SKY),
+                ('ALIGN',        (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN',       (0,0), (-1,-1), 'MIDDLE'),
+                ('TOPPADDING',   (0,0), (-1,-1), 5),
+                ('BOTTOMPADDING',(0,0), (-1,-1), 5),
+            ]))
+            story.append(res_tbl)
+            story.append(Spacer(1, 0.2*cm))
 
-            # ── 4. Weight statement ──
-            story.append(Paragraph("4.  Weight Statement", sH1))
-            CWS = [PW*0.45, PW*0.18, PW*0.18, PW*0.15]
-            t2 = Table(
-                [['Component', 'lbs', 'Fraction', '% W_TO']] +
-                list(zip(summary['Component'], summary['lbs'],
-                         summary['Fraction'],  summary['% W_TO'])),
-                colWidths=CWS)
+            # ════════════════════════════════
+            # SECTION 4 — Weight Statement
+            # ════════════════════════════════
+            story.append(Paragraph("4   Complete Weight Statement", sH1))
+            story.append(rule())
+            CWS = [PW*0.42, PW*0.17, PW*0.20, PW*0.17]
+            ws_rows = [['Component', 'lbs', 'Fraction W/W_TO', '% W_TO']]
+            for comp, lbs_val, frac_val, pct_val in zip(
+                    summary['Component'], summary['lbs'],
+                    summary['Fraction'],  summary['% W_TO']):
+                ws_rows.append([comp, lbs_val, frac_val, pct_val])
+            t2 = Table(ws_rows, colWidths=CWS)
             t2.setStyle(make_ts())
-            story += [t2, Spacer(1, 0.15*cm)]
+            # Highlight W_TO row
+            t2.setStyle(TableStyle([
+                ('FONTNAME',  (0,1),(-1,1),'Helvetica-Bold'),
+                ('TEXTCOLOR', (0,1),(-1,1), C_NAVY),
+                ('BACKGROUND',(0,1),(-1,1), colors.HexColor('#DBEAFE')),
+            ]))
+            story.append(t2)
+            story.append(Spacer(1, 0.2*cm))
 
-            # ── 5. Phase fractions ──
-            story.append(Paragraph("5.  Phase Weight Fractions", sH1))
-            CPF = [PW*0.38, PW*0.22, PW*0.22, PW*0.14]
+            # ════════════════════════════════
+            # SECTION 5 — Phase Fractions
+            # ════════════════════════════════
+            story.append(Paragraph("5   Phase Weight Fractions", sH1))
+            story.append(rule())
+            CPF = [PW*0.28, PW*0.17, PW*0.20, PW*0.17, PW*0.18]
+
+            # Cumulative Mff product column
+            cum_mff = [1.0]
+            for v in RR['fracs'].values():
+                cum_mff.append(round(cum_mff[-1]*v, 6))
+
             t3 = Table(
-                [['Phase', 'Wi / Wi-1', 'Type', 'Reference']] +
-                list(zip(list(RR['fracs'].keys()),
-                         [f"{v:.5f}" for v in RR['fracs'].values()],
-                         ['Fixed','Fixed','Fixed','Fixed','Variable','Variable','Fixed','Fixed'],
-                         ['Raymer T2.1','Raymer T2.1','Raymer T2.1','Raymer Fig2.2',
-                          'Breguet Eq2.9','Breguet Eq2.11','Raymer T2.1','Raymer T2.1'])),
+                [['Phase', 'Wᵢ / Wᵢ₋₁', 'Cumul. Mff', 'Type', 'Reference']] +
+                list(zip(
+                    list(RR['fracs'].keys()),
+                    [f"{v:.5f}" for v in RR['fracs'].values()],
+                    [f"{c:.5f}" for c in cum_mff[1:]],
+                    ['Fixed','Fixed','Fixed','Fixed','Variable','Variable','Fixed','Fixed'],
+                    ['Raymer T2.1','Raymer T2.1','Raymer T2.1','Raymer Fig2.2',
+                     'Breguet Eq 2.9','Breguet Eq 2.11','Raymer T2.1','Raymer T2.1']
+                )),
                 colWidths=CPF)
             t3.setStyle(make_ts())
-            story += [t3, Spacer(1, 0.12*cm)]
+            # Highlight Breguet rows
+            t3.setStyle(TableStyle([
+                ('BACKGROUND', (0,6),(- 1,6), colors.HexColor('#F0FDF4')),
+                ('BACKGROUND', (0,7),(-1,7),  colors.HexColor('#F0FDF4')),
+                ('TEXTCOLOR',  (3,6),(3,6),   colors.HexColor('#15803D')),
+                ('TEXTCOLOR',  (3,7),(3,7),   colors.HexColor('#15803D')),
+                ('FONTNAME',   (0,6),(-1,6),  'Helvetica-Bold'),
+                ('FONTNAME',   (0,7),(-1,7),  'Helvetica-Bold'),
+            ]))
+            story.append(t3)
+            story.append(Paragraph(
+                f"Final mission fuel fraction: Mff = {RR['Mff']:.6f}  "
+                f"(product of all 8 phase fractions above)",
+                sCAP))
+            story.append(Spacer(1, 0.15*cm))
 
-            # ── 6. Design ratios ──
-            story.append(Paragraph("6.  Key Design Ratios", sH1))
-            CWR = [PW*0.42, PW*0.20, PW*0.28]
-            t_r = Table([
-                ['Ratio',               'Value',              'Typical Range'],
-                ['W_PL / W_TO',         f'{Wpl/Wto:.4f}',    '0.10 - 0.25'],
-                ['W_F  / W_TO',         f'{WF/Wto:.4f}',     '0.20 - 0.45'],
-                ['W_E  / W_TO',         f'{WE/Wto:.4f}',     '0.45 - 0.65'],
-                ['W_OE / W_TO',         f'{WOE/Wto:.4f}',    '0.50 - 0.70'],
-                ['W_PL / W_E',          f'{Wpl/WE:.4f}',     '0.15 - 0.40'],
-            ], colWidths=CWR)
+            # ════════════════════════════════
+            # SECTION 6 — Design Ratios
+            # ════════════════════════════════
+            story.append(Paragraph("6   Key Design Ratios", sH1))
+            story.append(rule())
+
+            ratio_rows = [
+                ['Ratio', 'Value', 'Typical Range', 'Assessment'],
+            ]
+            ratio_def = [
+                ('W_PL / W_TO', Wpl/Wto, '0.10 – 0.25'),
+                ('W_F  / W_TO', WF/Wto,  '0.20 – 0.45'),
+                ('W_E  / W_TO', WE/Wto,  '0.45 – 0.65'),
+                ('W_OE / W_TO', WOE/Wto, '0.50 – 0.70'),
+                ('W_PL / W_E',  Wpl/WE,  '0.15 – 0.40'),
+            ]
+            for name, val, typ in ratio_def:
+                lo_t, hi_t = [float(x) for x in typ.replace(' ','').split('–')]
+                ok = lo_t <= val <= hi_t
+                assess = '✓ In range' if ok else ('▲ Above' if val > hi_t else '▼ Below')
+                ratio_rows.append([name, f'{val:.4f}', typ, assess])
+
+            CWR = [PW*0.26, PW*0.16, PW*0.25, PW*0.22]
+            t_r = Table(ratio_rows, colWidths=CWR)
             t_r.setStyle(make_ts())
-            story += [t_r, Spacer(1, 0.12*cm)]
+            story.append(t_r)
+            story.append(Spacer(1, 0.2*cm))
 
-            # ── 7. Sensitivity ──
-            story.append(Paragraph("7.  Sensitivity Partials  (Breguet Table 2.20)", sH1))
-            all_p = (list(zip(sdr['Partial'], sdr['Value'], sdr['Units'], sdr['Eq.'])) +
-                     list(zip(sdl['Partial'], sdl['Value'], sdl['Units'], sdl['Eq.'])))
-            CWP = [PW*0.36, PW*0.17, PW*0.33, PW*0.10]
-            t4 = Table([['Partial', 'Value', 'Units', 'Eq.']] + all_p, colWidths=CWP)
+            # ════════════════════════════════
+            # SECTION 7 — Sensitivity
+            # ════════════════════════════════
+            story.append(Paragraph("7   Sensitivity Analysis — Breguet Partial Derivatives", sH1))
+            story.append(rule())
+            story.append(Paragraph(
+                "Each partial derivative ∂W_TO/∂y quantifies the change in gross takeoff weight "
+                "per unit change in parameter y, with all other parameters held constant. "
+                "Negative values indicate design levers that reduce W_TO.",
+                sBODY))
+            story.append(Spacer(1, 0.1*cm))
+
+            all_p = (
+                list(zip(sdr['Partial'], sdr['Value'], sdr['Units'], sdr['Eq.'])) +
+                list(zip(sdl['Partial'], sdl['Value'], sdl['Units'], sdl['Eq.']))
+            )
+            CWP = [PW*0.36, PW*0.16, PW*0.32, PW*0.12]
+            t4 = Table([['Partial Derivative', 'Value', 'Units', 'Ref.']] + all_p,
+                       colWidths=CWP)
             t4.setStyle(make_ts())
-            story += [t4, Spacer(1, 0.12*cm)]
+            # Colour negative values green (good)
+            for row_idx, row in enumerate(all_p, start=1):
+                try:
+                    val = float(row[1].replace(',','').replace('+',''))
+                    if val < 0:
+                        t4.setStyle(TableStyle([
+                            ('TEXTCOLOR', (1, row_idx), (1, row_idx),
+                             colors.HexColor('#15803D')),
+                        ]))
+                except: pass
+            story.append(t4)
+            story.append(Spacer(1, 0.2*cm))
 
-            # ── 8. References ──
-            story.append(Paragraph("8.  References", sH1))
-            CWF = [PW*0.10, PW*0.88]
+            # ════════════════════════════════
+            # SECTION 8 — References
+            # ════════════════════════════════
+            story.append(Paragraph("8   References", sH1))
+            story.append(rule())
+            CWF = [PW*0.08, PW*0.92]
             refs = [
-                ['[1]', 'Raymer, D.P. (2018). Aircraft Design: A Conceptual Approach, 6th Ed. AIAA Education Series.'],
-                ['[2]', 'Roskam, J. (2003). Airplane Design, Part I: Preliminary Sizing. DAR Corporation.'],
-                ['[3]', 'Breguet, L. (1923). Calcul du Poids de Combustible par un Avion. Comptes Rendus, Paris.'],
-                ['[4]', 'Nicolai & Carichner (2010). Fundamentals of Aircraft and Airship Design. AIAA.'],
-                ['[5]', 'MIL-HDBK-516C (2014). Airworthiness Certification Criteria. U.S. DoD.'],
+                ['[1]', 'Raymer, D.P. (2018). Aircraft Design: A Conceptual Approach, 6th Ed. AIAA Education Series. — Primary reference for all equations, weight fractions, and regression constants.'],
+                ['[2]', 'Roskam, J. (2003). Airplane Design, Part I: Preliminary Sizing. DAR Corporation. — Alternative regression constants and cross-validation methodology.'],
+                ['[3]', 'Breguet, L. (1923). Calcul du Poids de Combustible Consommé par un Avion. Comptes Rendus, Paris. — Original derivation of range and endurance equations.'],
+                ['[4]', 'Nicolai & Carichner (2010). Fundamentals of Aircraft and Airship Design. AIAA Education Series.'],
+                ['[5]', 'MIL-HDBK-516C (2014). Airworthiness Certification Criteria. U.S. DoD. — Weight definitions consistent with FAA/EASA standards.'],
             ]
             t5 = Table([['Ref.', 'Citation']] + refs, colWidths=CWF)
-            t5.setStyle(make_ts())
+            t5.setStyle(make_ts(hdr_bg=colors.HexColor('#334155')))
             story.append(t5)
+
+            # Footer note
+            story.append(Spacer(1, 0.3*cm))
+            story.append(HRFlowable(width=PW, thickness=0.5, color=C_RULE))
+            story.append(Paragraph(
+                "DISCLAIMER: This report is generated by AeroSizer Pro for conceptual-level "
+                "preliminary sizing only. Results are not certified for regulatory or structural "
+                "analysis. All weights in lbs (avoirdupois). Raymer 2018 Eq. 2.9 applies to "
+                "propeller-driven aircraft only.",
+                ps('DIS', fontSize=6.5, textColor=C_LGRAY, leading=9.5, spaceBefore=3)))
 
             doc.build(story)
             buf.seek(0)
