@@ -317,19 +317,40 @@ html,body,[class*="css"]{
 }
 
 /* ── DATAFRAME ── */
-[data-testid="stDataFrame"]{border:1px solid var(--border)!important;border-radius:9px!important;}
-[data-testid="stDataFrame"] thead th{
-  background:var(--pan)!important;color:var(--gold)!important;
-  font-family:'JetBrains Mono',monospace!important;font-size:.7rem!important;
-  font-weight:600!important;letter-spacing:.06em!important;
-  border-bottom:1px solid var(--gold)!important;
+[data-testid="stDataFrame"]{
+  border:1px solid var(--border)!important;border-radius:10px!important;
+  overflow:hidden!important;
+}
+[data-testid="stDataFrame"] table{border-collapse:collapse!important;}
+[data-testid="stDataFrame"] thead tr th{
+  background:var(--pan2)!important;color:var(--gold)!important;
+  font-family:'JetBrains Mono',monospace!important;font-size:.68rem!important;
+  font-weight:700!important;letter-spacing:.1em!important;text-transform:uppercase!important;
+  border-bottom:1.5px solid rgba(200,168,108,.3)!important;
+  padding:.5rem .8rem!important;
 }
 [data-testid="stDataFrame"] tbody td{
   font-family:'JetBrains Mono',monospace!important;font-size:.78rem!important;
-  color:var(--text)!important;border-color:var(--border2)!important;padding:.4rem .7rem!important;
+  color:var(--text)!important;border-color:var(--border2)!important;
+  padding:.42rem .8rem!important;line-height:1.4!important;
 }
-[data-testid="stDataFrame"] tbody tr:nth-child(even) td{background:rgba(255,255,255,.02)!important;}
-[data-testid="stDataFrame"] tbody tr:hover td{background:rgba(200,168,108,.05)!important;}
+[data-testid="stDataFrame"] tbody tr:nth-child(odd) td{
+  background:rgba(255,255,255,.015)!important;
+}
+[data-testid="stDataFrame"] tbody tr:hover td{
+  background:rgba(200,168,108,.06)!important;color:var(--white)!important;
+}
+/* Number cells — right align */
+[data-testid="stDataFrame"] tbody td[data-type="number"]{
+  text-align:right!important;color:var(--gold2)!important;
+}
+/* First column — label style */
+[data-testid="stDataFrame"] tbody td:first-child{
+  color:var(--text2)!important;font-size:.73rem!important;
+}
+/* Scrollbar inside table */
+[data-testid="stDataFrame"] ::-webkit-scrollbar{height:3px;}
+[data-testid="stDataFrame"] ::-webkit-scrollbar-thumb{background:rgba(200,168,108,.25);}
 
 /* ── DOWNLOAD ── */
 div.stDownloadButton>button{
@@ -706,7 +727,12 @@ with tab1:
                        f"{Wtfo_r:,.2f}", f"{WOE:,.1f}", f"{WE:,.2f}", f"{RR['WEa']:,.2f}",
                        f"{RR['diff']:+.2f}", f"{Wpl:,.1f}", f"{Wcrew:,.1f}"],
             'Unit':   ['lbs','—','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs']})
-        st.dataframe(df_sum, hide_index=True, use_container_width=True, height=400)
+        st.dataframe(df_sum, hide_index=True, use_container_width=True, height=410,
+            column_config={
+                'Symbol': st.column_config.TextColumn('Symbol', width='small'),
+                'Value':  st.column_config.TextColumn('Value',  width='medium'),
+                'Unit':   st.column_config.TextColumn('Unit',   width='small'),
+            })
 
         # Weight ratios
         ratio_rows = []
@@ -720,7 +746,13 @@ with tab1:
                 'Ratio': name, 'Value': f'{val_r:.4f}',
                 'Typical': f'{lo_r:.2f}–{hi_r:.2f}',
                 'Status': '✓' if ok_r else ('▲' if val_r > hi_r else '▼')})
-        st.dataframe(pd.DataFrame(ratio_rows), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(ratio_rows), hide_index=True, use_container_width=True,
+            column_config={
+                'Ratio':   st.column_config.TextColumn('Ratio',   width='small'),
+                'Value':   st.column_config.TextColumn('Value',   width='small'),
+                'Typical': st.column_config.TextColumn('Typical', width='small'),
+                'Status':  st.column_config.TextColumn('Status',  width='small'),
+            })
 
 # ═══════════════════════════════════════════════════
 # TAB 2 — SENSITIVITY
@@ -930,7 +962,7 @@ with tab3:
     fig4.update_layout(**DARK_LAYOUT, title=dict(text='Sensitivity Tornado — dW_TO/dX',
         font=dict(color='#c8a86c', size=12, family='DM Serif Display')),
         height=340, xaxis=dict(**AXIS, title='dW_TO (lbs per unit change)'),
-        yaxis=dict(**AXIS, tickfont=dict(size=9)))
+        yaxis=dict(**AXIS))
     st.plotly_chart(fig4, use_container_width=True)
 
     # ── Chart 4: Convergence visualization ──
@@ -980,8 +1012,15 @@ with tab4:
                           RR['diff'], Wpl, Wcrew, RR['Rc'], RR['Vm'], S['F'], S['C'], S['D']],
             'Units':     ['lbs','—','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs',
                           's.m.','mph','—','—','lbs']}
+        df_export = pd.DataFrame(rows)
+        st.dataframe(df_export, hide_index=True, use_container_width=True,
+            column_config={
+                'Parameter': st.column_config.TextColumn('Parameter', width='medium'),
+                'Value':     st.column_config.NumberColumn('Value', format='%.4f'),
+                'Units':     st.column_config.TextColumn('Units', width='small'),
+            })
         b = io.StringIO()
-        pd.DataFrame(rows).to_csv(b, index=False)
+        df_export.to_csv(b, index=False)
         st.download_button("⬇  Full Results (CSV)", b.getvalue(),
                            "aerosizer_results.csv", "text/csv",
                            use_container_width=True)
