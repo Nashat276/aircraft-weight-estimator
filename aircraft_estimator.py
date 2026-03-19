@@ -1,4 +1,4 @@
-# app.py (modified per request: remove Charts tab, improve tables & PDF)
+# app.py — AeroSizer Pro (final with colored tables, no Charts tab)
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -12,22 +12,330 @@ from reportlab.lib.units import cm
 from reportlab.lib.enums import TA_CENTER
 import plotly.graph_objects as go
 
-# Page config
+# ─── PAGE CONFIG ───
 st.set_page_config(page_title="AeroSizer Pro", page_icon="✈", layout="wide",
                    initial_sidebar_state="expanded")
 
-# Keep original CSS (unchanged)
-CSS = """..."""  # Use your original CSS block here (too long to repeat)
+# ─── CSS (use your original CSS block) ───
+CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap');
+
+:root {
+  --bg:#07090d;       --sur:#0c0f16;      --pan:#111720;      --pan2:#161d2a;
+  --border:rgba(255,255,255,.07);  --border2:rgba(255,255,255,.04);
+  --gold:#c8a86c;     --gold2:#e4c88a;    --gold3:rgba(200,168,108,.08);
+  --blue:#4875c2;     --blue2:#6a9eea;    --blue3:#8fb8ff;
+  --green:#3fb950;    --amber:#e3b341;    --red:#f85149;      --pu:#9c72d4;
+  --text:#b0bcce;     --text2:#8b949e;    --text3:#6e7681;    --white:#f0ede6;
+  --sh:0 8px 40px rgba(0,0,0,.6);
+}
+
+*,*::before,*::after{box-sizing:border-box;}
+html,body,[class*="css"]{
+  background:var(--bg)!important;
+  color:var(--text)!important;
+  font-family:'DM Sans',sans-serif!important;
+}
+.stApp{background:var(--bg)!important;}
+.main .block-container{padding:1rem 1.5rem 2rem!important;max-width:100%!important;}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:rgba(200,168,108,.3);border-radius:4px;}
+::-webkit-scrollbar-thumb:hover{background:var(--gold);}
+
+/* ── SIDEBAR ── */
+[data-testid="stSidebar"]{
+  background:var(--sur)!important;
+  border-right:1px solid var(--border)!important;
+  padding:0!important;
+}
+[data-testid="stSidebar"]>div:first-child{padding:0!important;}
+
+.sb-logo{
+  padding:1.4rem 1.2rem 1rem;
+  border-bottom:1px solid var(--border);
+  background:linear-gradient(150deg,#06090f,#0c1220);
+  position:relative;overflow:hidden;
+}
+.sb-logo::before{
+  content:'';position:absolute;inset:0;
+  background-image:linear-gradient(rgba(72,117,194,.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(72,117,194,.04) 1px,transparent 1px);
+  background-size:20px 20px;pointer-events:none;
+}
+.sb-logo-title{
+  font-family:'DM Serif Display',serif;font-size:1.3rem;font-weight:400;
+  color:var(--white);letter-spacing:-.03em;line-height:1;position:relative;z-index:1;
+}
+.sb-logo-title span{
+  background:linear-gradient(135deg,var(--gold),var(--gold2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.sb-logo-sub{
+  font-family:'JetBrains Mono',monospace;font-size:.55rem;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--text3);margin-top:.35rem;position:relative;z-index:1;
+}
+.sb-stripe{height:2px;background:linear-gradient(90deg,var(--blue),var(--gold),var(--blue));
+  background-size:200%;animation:stripeMove 4s linear infinite;}
+@keyframes stripeMove{0%{background-position:0%;}100%{background-position:200%;}}
+
+.sb-sec{
+  font-family:'JetBrains Mono',monospace;font-size:.58rem;font-weight:600;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--gold);
+  padding:.6rem 1.1rem .35rem;border-bottom:1px solid var(--border2);
+  margin:.4rem 0 .5rem;display:flex;align-items:center;gap:.45rem;
+}
+.sb-sec::before{content:'';width:10px;height:1px;background:var(--gold);flex-shrink:0;}
+
+[data-testid="stSidebar"] label{
+  font-family:'DM Sans',sans-serif!important;
+  font-size:.77rem!important;font-weight:500!important;color:var(--text)!important;
+}
+[data-testid="stSidebar"] .stNumberInput input{
+  background:var(--pan)!important;border:1px solid var(--border)!important;
+  border-radius:7px!important;color:var(--white)!important;
+  font-family:'JetBrains Mono',monospace!important;font-size:.82rem!important;
+}
+[data-testid="stSidebar"] .stNumberInput input:focus{
+  border-color:var(--gold)!important;
+  box-shadow:0 0 0 2px rgba(200,168,108,.2)!important;
+}
+[data-testid="stSidebar"] div.stButton>button{
+  background:linear-gradient(135deg,var(--gold),var(--gold2))!important;
+  color:#07090d!important;border:none!important;border-radius:9px!important;
+  font-size:.83rem!important;font-weight:700!important;padding:.65rem!important;
+  width:100%!important;letter-spacing:.04em;
+  box-shadow:0 4px 18px rgba(200,168,108,.3)!important;
+  transition:all .22s!important;
+}
+[data-testid="stSidebar"] div.stButton>button:hover{
+  transform:translateY(-1px)!important;
+  box-shadow:0 6px 22px rgba(200,168,108,.4)!important;
+}
+
+/* Sidebar KPI */
+.sb-kpi{
+  background:var(--pan);border:1px solid var(--border);border-radius:9px;
+  padding:.75rem 1rem;margin:0 .7rem .5rem;
+  border-top:2px solid var(--gold);
+}
+.sb-kpi-val{
+  font-family:'JetBrains Mono',monospace;font-size:1.5rem;font-weight:700;
+  color:var(--gold2);line-height:1.1;
+}
+.sb-kpi-lbl{font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-top:.2rem;}
+.conv-pill{
+  display:inline-flex;align-items:center;gap:.38rem;border-radius:20px;
+  padding:.24rem .8rem;font-family:'JetBrains Mono',monospace;
+  font-size:.65rem;font-weight:700;letter-spacing:.05em;margin-top:.55rem;
+}
+.conv-ok{background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.3);color:#3fb950;}
+.conv-warn{background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);color:#f85149;}
+
+/* ── TABS ── */
+.stTabs [data-baseweb="tab-list"]{
+  background:var(--sur)!important;border:1px solid var(--border)!important;
+  border-radius:11px!important;padding:4px!important;gap:3px!important;
+  margin-bottom:1.2rem!important;
+}
+.stTabs [data-baseweb="tab"]{
+  border-radius:8px!important;font-family:'DM Sans',sans-serif!important;
+  font-size:.8rem!important;font-weight:500!important;color:var(--text2)!important;
+  padding:.44rem 1.2rem!important;transition:all .2s!important;
+}
+.stTabs [aria-selected="true"]{
+  background:linear-gradient(135deg,var(--gold),var(--gold2))!important;
+  color:#07090d!important;font-weight:700!important;
+  box-shadow:0 2px 12px rgba(200,168,108,.35)!important;
+}
+
+/* ── CARDS ── */
+.card{
+  background:var(--sur);border:1px solid var(--border);
+  border-radius:12px;padding:1.15rem 1.3rem;margin-bottom:1rem;
+  position:relative;overflow:hidden;
+}
+.card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.06),transparent);
+  pointer-events:none;
+}
+.card-blue{border-left:2px solid var(--blue2);}
+.card-gold{border-left:2px solid var(--gold);}
+.card-green{border-left:2px solid var(--green);}
+.card-amber{border-left:2px solid var(--amber);}
+.card-red{border-left:2px solid var(--red);}
+
+.card-title{
+  font-family:'JetBrains Mono',monospace;font-size:.58rem;font-weight:700;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--gold);
+  padding-bottom:.5rem;border-bottom:1px solid var(--border2);
+  margin-bottom:.8rem;display:flex;align-items:center;gap:.5rem;
+}
+.card-title::before{content:'';width:8px;height:1px;background:var(--gold);flex-shrink:0;}
+
+/* ── EQUATIONS ── */
+.eq-box{
+  background:rgba(200,168,108,.07);border:1px solid rgba(200,168,108,.2);
+  border-radius:8px;padding:.5rem 1rem;
+  font-family:'JetBrains Mono',monospace;font-size:.8rem;color:var(--gold2);
+  display:block;margin-bottom:.5rem;white-space:nowrap;overflow-x:auto;
+  letter-spacing:.01em;
+}
+.eq-label{font-size:.72rem;color:var(--text2);margin-bottom:.3rem;font-weight:500;}
+
+/* ── RESULT PILLS ── */
+.rpill{
+  display:inline-flex;align-items:baseline;gap:.28rem;border-radius:7px;
+  padding:.22rem .75rem;font-family:'JetBrains Mono',monospace;
+  font-size:.86rem;font-weight:700;margin-right:.4rem;margin-top:.35rem;
+}
+.rpill-blue{background:rgba(72,117,194,.12);border:1px solid rgba(106,158,234,.28);color:var(--blue3);}
+.rpill-gold{background:rgba(200,168,108,.1);border:1px solid rgba(200,168,108,.28);color:var(--gold2);}
+.rpill-green{background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.28);color:var(--green);}
+.rpill-warn{background:rgba(227,179,65,.1);border:1px solid rgba(227,179,65,.28);color:var(--amber);}
+.rpill-red{background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.28);color:var(--red);}
+.rpill-unit{font-size:.63rem;font-weight:400;opacity:.6;}
+
+/* ── PHASE TABLE ROWS ── */
+.ph-hdr{
+  display:grid;grid-template-columns:150px 95px 80px 80px 1fr;
+  gap:.5rem;padding:.25rem 0 .4rem;
+  font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--text3);border-bottom:1px solid var(--border);font-weight:600;
+}
+.ph-row{
+  display:grid;grid-template-columns:150px 95px 80px 80px 1fr;
+  gap:.5rem;align-items:center;padding:.4rem 0;
+  border-bottom:1px solid var(--border2);font-size:.8rem;
+  transition:background .15s;
+}
+.ph-row:last-child{border-bottom:none;}
+.ph-row:hover{background:rgba(200,168,108,.03);border-radius:6px;}
+.ph-name{font-weight:500;color:var(--text);}
+.ph-frac{font-family:'JetBrains Mono',monospace;font-weight:700;}
+.ph-frac-fixed{color:var(--blue3);}
+.ph-frac-breguet{color:var(--gold2);}
+.ph-badge{
+  font-size:.6rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  padding:.1rem .5rem;border-radius:4px;width:fit-content;
+}
+.ph-badge-fixed{background:rgba(72,117,194,.1);color:var(--blue3);border:1px solid rgba(72,117,194,.2);}
+.ph-badge-breguet{background:rgba(200,168,108,.1);color:var(--gold);border:1px solid rgba(200,168,108,.2);}
+.ph-src{font-size:.66rem;color:var(--text3);font-family:'JetBrains Mono',monospace;}
+
+/* ── SENSITIVITY ── */
+.sens-row{
+  display:grid;grid-template-columns:210px 115px 160px 70px;
+  gap:.5rem;align-items:center;padding:.38rem 0;
+  border-bottom:1px solid var(--border2);transition:background .15s;
+}
+.sens-row:hover{background:rgba(200,168,108,.03);border-radius:6px;}
+.sens-row:last-child{border-bottom:none;}
+.sens-partial{font-family:'JetBrains Mono',monospace;font-size:.77rem;color:var(--text);}
+.sens-pos{font-family:'JetBrains Mono',monospace;font-size:.82rem;font-weight:700;color:var(--red);}
+.sens-neg{font-family:'JetBrains Mono',monospace;font-size:.82rem;font-weight:700;color:var(--green);}
+.sens-unit{font-size:.65rem;color:var(--text3);}
+.sens-eq{font-size:.63rem;color:var(--gold);font-family:'JetBrains Mono',monospace;}
+
+/* ── STATUS BAR ── */
+.status-ok{
+  background:rgba(63,185,80,.07);border:1px solid rgba(63,185,80,.18);
+  border-left:3px solid var(--green);border-radius:0 9px 9px 0;
+  padding:.55rem 1.2rem;margin-bottom:1rem;
+  font-family:'JetBrains Mono',monospace;font-size:.77rem;color:var(--green);
+}
+.status-err{
+  background:rgba(248,81,73,.06);border:1px solid rgba(248,81,73,.18);
+  border-left:3px solid var(--red);border-radius:0 9px 9px 0;
+  padding:.55rem 1.2rem;margin-bottom:1rem;
+  font-family:'JetBrains Mono',monospace;font-size:.77rem;color:var(--red);
+}
+
+/* ── KPI CARDS ── */
+.kpi-card{
+  background:var(--sur);border:1px solid var(--border);
+  border-radius:11px;padding:1rem 1.1rem;
+  border-top:2px solid var(--border);
+  transition:transform .2s,border-color .2s;
+}
+.kpi-card:hover{transform:translateY(-2px);border-color:rgba(200,168,108,.25);}
+.kpi-card.primary{border-top:2px solid var(--gold);background:rgba(200,168,108,.05);}
+.kpi-card.green{border-top:2px solid var(--green);}
+.kpi-card.amber{border-top:2px solid var(--amber);}
+.kpi-card.blue{border-top:2px solid var(--blue2);}
+.kpi-val{
+  font-family:'JetBrains Mono',monospace;font-size:1.5rem;
+  font-weight:700;color:var(--white);line-height:1.1;
+}
+.kpi-val.primary{color:var(--gold2);font-size:1.65rem;}
+.kpi-unit{font-size:.65rem;font-weight:400;color:var(--text3);margin-left:2px;}
+.kpi-lbl{font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-top:.3rem;font-weight:500;}
+
+/* ── SECTION DIV ── */
+.sec-div{
+  font-family:'JetBrains Mono',monospace;font-size:.6rem;font-weight:700;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--gold);
+  border-bottom:1px solid var(--border);padding-bottom:.4rem;
+  margin:.8rem 0 .9rem;display:flex;align-items:center;gap:.5rem;
+}
+.sec-div::before{content:'';width:10px;height:1px;background:var(--gold);flex-shrink:0;}
+
+/* ── MAIN HEADER ── */
+.main-header{
+  background:var(--sur);border:1px solid var(--border);
+  border-radius:12px;border-left:3px solid var(--gold);
+  padding:.9rem 1.5rem;margin-bottom:1.1rem;
+  display:flex;align-items:center;justify-content:space-between;
+  position:relative;overflow:hidden;
+}
+.main-header::before{
+  content:'';position:absolute;inset:0;
+  background-image:linear-gradient(rgba(200,168,108,.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(200,168,108,.03) 1px,transparent 1px);
+  background-size:32px 32px;pointer-events:none;
+}
+.mh-title{
+  font-family:'DM Serif Display',serif;font-size:1.4rem;font-weight:400;
+  color:var(--white);letter-spacing:-.03em;line-height:1;position:relative;z-index:1;
+}
+.mh-title span{
+  background:linear-gradient(135deg,var(--gold),var(--gold2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+
+/* ── DATAFRAME fallback styling removed (we use custom html tables) */
+
+/* ── DOWNLOAD ── */
+div.stDownloadButton>button{
+  background:var(--pan)!important;color:var(--gold)!important;
+  border:1px solid rgba(200,168,108,.25)!important;border-radius:8px!important;
+  font-size:.8rem!important;font-weight:600!important;padding:.55rem 1rem!important;width:100%!important;
+  transition:all .2s!important;
+}
+div.stDownloadButton>button:hover{
+  border-color:var(--gold)!important;color:var(--white)!important;
+  background:rgba(200,168,108,.1)!important;transform:translateY(-1px)!important;
+}
+</style>
+"""
 st.markdown(CSS, unsafe_allow_html=True)
 
-# Physics functions (unchanged)
+# ---------------------------
+# Physics functions (same as original)
+# ---------------------------
 def compute_mission(p):
     Wpl   = p['npax'] * (p['wpax'] + p['wbag'])
     Wcrew = (p['ncrew'] + p['natt']) * 205
     Wtfo  = p['Wto'] * p['Mtfo']
-    Rc    = p['R']   * 1.15078
-    Vm    = p['Vl']  * 1.15078
+    Rc    = p['R']   * 1.15078              # nm → statute miles
+    Vm    = p['Vl']  * 1.15078              # kts → mph
+    # Eq 2.9 cruise fraction
     W5 = 1.0 / math.exp(Rc / (375.0 * (p['npc'] / p['Cpc']) * p['LDc']))
+    # Eq 2.11 loiter fraction
     W6 = 1.0 / math.exp(p['El'] / (375.0 * (1.0 / Vm) * (p['npl'] / p['Cpl']) * p['LDl']))
     phases = {
         'Engine Start': (0.990, 'Fixed',   'T2.1'),
@@ -103,7 +411,9 @@ def sensitivity(p, Wto):
         dnpE  = -F * E * Vm * p['Cpl'] / (375.0 * p['npl']**2 * p['LDl']),
         dLDE  = -F * E * Vm * p['Cpl'] / (375.0 * p['npl'] * p['LDl']**2))
 
-# Sidebar inputs (unchanged)
+# ---------------------------
+# Sidebar inputs
+# ---------------------------
 with st.sidebar:
     st.markdown(
         '<div class="sb-logo">'
@@ -145,7 +455,9 @@ with st.sidebar:
     st.markdown("<br>", unsafe_allow_html=True)
     calc  = st.button("⟳  Run Sizing", use_container_width=True)
 
-# Compute
+# ---------------------------
+# Solve and cache result in session
+# ---------------------------
 P = dict(npax=int(npax), wpax=float(wpax), wbag=float(wbag),
          ncrew=int(ncrew), natt=int(natt), Mtfo=float(Mtfo), Mr=float(Mres),
          R=float(R_nm), Vl=float(Vl), LDc=float(LDc), Cpc=float(Cpc), npc=float(npc),
@@ -164,7 +476,7 @@ conv     = abs(RR['diff']) < 1.0
 WE       = RR['WE'];  WOE = RR['WOE']; WF = RR['WF']
 Wpl      = RR['Wpl']; Wcrew = RR['Wcrew']; Wtfo_r = RR['Wtfo']
 
-# Sidebar live results (unchanged display)
+# Sidebar live results
 with st.sidebar:
     st.markdown('<div class="sb-sec">◉ Live Results</div>', unsafe_allow_html=True)
     c_cls = "conv-ok" if conv else "conv-warn"
@@ -189,7 +501,7 @@ with st.sidebar:
       <div class="conv-pill {c_cls}">{c_txt}</div>
     </div>""", unsafe_allow_html=True)
 
-# Main header (unchanged)
+# Main header
 badge_c = '#3fb950' if conv else '#f85149'
 badge_b = 'rgba(63,185,80,.1)' if conv else 'rgba(248,81,73,.08)'
 badge_t = '✓ Converged' if conv else '⚠ Not Converged'
@@ -213,7 +525,7 @@ if conv:
 else:
     st.markdown(f'<div class="status-err">⚠ &nbsp;Not converged — ΔW_E = {RR["diff"]:+.0f} lbs. Adjust A, B constants or inputs.</div>', unsafe_allow_html=True)
 
-# KPI row (unchanged)
+# KPI row
 kpis = [
     (f"{Wto:,.0f}",        "lbs", "W_TO Gross Takeoff", "primary"),
     (f"{RR['Mff']:.5f}",   "",    "Mff Fuel Fraction",   "blue"),
@@ -234,7 +546,49 @@ for col, (val, unit, lbl, cls) in zip(cols, kpis):
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Tabs: remove Charts tab; keep Sizing, Sensitivity (no heavy plots), Export, References
+# Helper: produce colored HTML table matching theme
+def make_colored_table(df, header_bg="#0c1220", header_text="#c8a86c",
+                       row_bg="rgba(255,255,255,0.01)", row_alt_bg="rgba(200,168,108,0.02)",
+                       text_color="#b0bcce", accent="#c8a86c", table_width="100%"):
+    cols = list(df.columns)
+    ths = ""
+    for col in cols:
+        ths += f"<th style='padding:10px 12px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.06);font-family:JetBrains Mono;font-size:0.85rem;color:{header_text};'>{col}</th>"
+    trs = ""
+    for i, (_, row) in enumerate(df.iterrows()):
+        bg = row_bg if i % 2 == 0 else row_alt_bg
+        tds = ""
+        for j, col in enumerate(cols):
+            val = row[col]
+            # If numeric string or number, keep as-is; align numbers right except first column
+            is_num = False
+            try:
+                if isinstance(val, (int, float, np.integer, np.floating)):
+                    is_num = True
+                else:
+                    # also check numeric strings
+                    float(str(val).replace(',', ''))
+                    is_num = True
+            except:
+                is_num = False
+            align = "right" if is_num and j != 0 else "left"
+            tds += f"<td style='padding:9px 12px;color:{text_color};text-align:{align};font-family:JetBrains Mono;font-size:0.9rem;border-right:0px solid transparent'>{val}</td>"
+        trs += f"<tr style='background:{bg};'>{tds}</tr>"
+    html = f"""
+    <div style="width:{table_width};border:1px solid rgba(255,255,255,0.05);border-radius:10px;overflow:hidden;">
+      <table style="border-collapse:collapse;width:100%;">
+        <thead style="background:{header_bg};">
+          <tr>{ths}</tr>
+        </thead>
+        <tbody>
+          {trs}
+        </tbody>
+      </table>
+    </div>
+    """
+    return html
+
+# Tabs (no Charts tab)
 tab1, tab2, tab4, tab5 = st.tabs([
     " ✦ Sizing Steps ",
     " ∂ Sensitivity ",
@@ -242,16 +596,90 @@ tab1, tab2, tab4, tab5 = st.tabs([
     " ⊕ References "
 ])
 
-# TAB 1 — Sizing Steps (improve weight build-up table)
+# TAB 1 — SIZING STEPS
 with tab1:
     col_l, col_r = st.columns([3, 2], gap="medium")
 
     with col_l:
-        # Steps 1..3 same as original (omitted here for brevity) — keep your existing HTML blocks
-        # ...
-        # After Steps content, present improved Weight Build-Up table (clear units + totals)
+        # Step 1
+        pax_wt  = int(npax) * (int(wpax) + int(wbag))
+        crew_wt = int(ncrew) * 205
+        att_wt  = int(natt)  * 200
+        st.markdown(f"""
+        <div class="card card-gold">
+          <div class="card-title">Step 1 — Payload & Crew Weights</div>
+          <div class="ph-row" style="grid-template-columns:200px 100px 1fr">
+            <span class="ph-name">{npax} pax × ({int(wpax)} + {int(wbag)}) lbs</span>
+            <span class="ph-frac ph-frac-fixed">{pax_wt:,} lbs</span>
+            <span class="ph-src">cabin payload</span>
+          </div>
+          <div class="ph-row" style="grid-template-columns:200px 100px 1fr">
+            <span class="ph-name">{ncrew} pilots × 205 lbs</span>
+            <span class="ph-frac ph-frac-fixed">{crew_wt:,} lbs</span>
+            <span class="ph-src">flight crew</span>
+          </div>
+          <div class="ph-row" style="grid-template-columns:200px 100px 1fr">
+            <span class="ph-name">{natt} attendant × 200 lbs</span>
+            <span class="ph-frac ph-frac-fixed">{att_wt:,} lbs</span>
+            <span class="ph-src">cabin crew</span>
+          </div>
+          <div style="margin-top:.65rem">
+            <span class="rpill rpill-gold">W_PL = {RR['Wpl']:,.0f} <span class="rpill-unit">lbs</span></span>
+            <span class="rpill rpill-blue">W_crew = {RR['Wcrew']:,.0f} <span class="rpill-unit">lbs</span></span>
+          </div>
+        </div>""", unsafe_allow_html=True)
+
+        # Step 2
+        st.markdown(f"""
+        <div class="card card-blue">
+          <div class="card-title">Step 2 — Unit Conversions</div>
+          <div class="ph-row" style="grid-template-columns:220px 120px 1fr">
+            <span class="ph-name">R_cruise (statute miles)</span>
+            <span class="ph-frac ph-frac-fixed">{RR['Rc']:.3f}</span>
+            <span class="ph-src">{R_nm} nm × 1.15078</span>
+          </div>
+          <div class="ph-row" style="grid-template-columns:220px 120px 1fr">
+            <span class="ph-name">V_loiter (mph)</span>
+            <span class="ph-frac ph-frac-fixed">{RR['Vm']:.2f}</span>
+            <span class="ph-src">{Vl} kts × 1.15078</span>
+          </div>
+          <div class="ph-row" style="grid-template-columns:220px 120px 1fr">
+            <span class="ph-name">W_tfo = M_tfo × W_TO</span>
+            <span class="ph-frac ph-frac-fixed">{Wtfo_r:,.2f} lbs</span>
+            <span class="ph-src">{Mtfo:.3f} × {Wto:,.0f}</span>
+          </div>
+        </div>""", unsafe_allow_html=True)
+
+        # Step 3 — Mission Phase Fractions
+        st.markdown('<div class="card card-blue"><div class="card-title">Step 3 — Mission Phase Weight Fractions</div>', unsafe_allow_html=True)
+        st.markdown("""
+        <div class="ph-hdr">
+          <span>Phase</span><span>Wᵢ/Wᵢ₋₁</span><span>Type</span><span>Source</span><span>Cum. Mff</span>
+        </div>""", unsafe_allow_html=True)
+        cum_mff = 1.0
+        for ph, (fv, ftype, fsrc) in RR['phases'].items():
+            cum_mff *= fv
+            fc = 'ph-frac-breguet' if ftype == 'Breguet' else 'ph-frac-fixed'
+            bc = 'ph-badge-breguet' if ftype == 'Breguet' else 'ph-badge-fixed'
+            st.markdown(
+                f'<div class="ph-row">'
+                f'<span class="ph-name">{ph}</span>'
+                f'<span class="ph-frac {fc}">{fv:.5f}</span>'
+                f'<span class="ph-badge {bc}">{ftype}</span>'
+                f'<span class="ph-src">{fsrc}</span>'
+                f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:.73rem;color:#8b949e">{cum_mff:.5f}</span>'
+                f'</div>',
+                unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="margin-top:.65rem;padding-top:.5rem;border-top:1px solid var(--border2)">'
+            f'<span class="rpill rpill-gold">Mff = {RR["Mff"]:.6f}</span>'
+            f'<span style="font-size:.68rem;color:#6e7681;margin-left:.4rem">product of all 8 phase fractions</span>'
+            f'</div></div>',
+            unsafe_allow_html=True)
+
+        # Improved Weight Build-Up table (colored)
+        st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
         st.markdown('<div class="card card-green"><div class="card-title">Weight Build-Up</div>', unsafe_allow_html=True)
-        # Compose breakdown consistent with RR
         breakdown = {
             'W_TO (solution)': Wto,
             'W_F (total fuel)': WF,
@@ -262,58 +690,98 @@ with tab1:
             'W_OE (operating empty)': WOE,
             'W_E (tentative empty)': WE,
             'W_E (allowable)': RR['WEa'],
+            'ΔW_E (allowing)': RR['diff'],
         }
         df_w = pd.DataFrame([
-            {'Component': k, 'Weight (lbs)': float(v)} for k, v in breakdown.items()
+            {'Component': k, 'Weight (lbs)': f'{v:,.2f}'} for k, v in breakdown.items()
         ])
-        df_w['Weight (lbs)'] = df_w['Weight (lbs)'].map(lambda x: f'{x:,.2f}')
-        st.dataframe(df_w, hide_index=True, use_container_width=True, height=320)
+        html_tbl = make_colored_table(df_w,
+            header_bg="#0c1220", header_text="#c8a86c",
+            row_bg="rgba(255,255,255,0.01)", row_alt_bg="rgba(200,168,108,0.02)",
+            text_color="#b0bcce", accent="#c8a86c")
+        st.markdown(html_tbl, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col_r:
-        # Equations and summary table kept (same as original)
-        # recreate df_sum as before and display
+        # Equations card
+        st.markdown("""
+        <div class="card card-gold">
+          <div class="card-title">Key Equations — Raymer Ch.2</div>
+          <div class="eq-label">Cruise fraction (Eq. 2.9)</div>
+          <div class="eq-box">W₅/W₄ = 1 / exp[ Rc / (375·η_p/Cp·L/D) ]</div>
+          <div class="eq-label" style="margin-top:.6rem">Loiter fraction (Eq. 2.11)</div>
+          <div class="eq-box">W₆/W₅ = 1 / exp[ E / (375·(1/V)·η_p/Cp·L/D) ]</div>
+          <div class="eq-label" style="margin-top:.6rem">Regression (Table 2.2 / 2.15)</div>
+          <div class="eq-box">log₁₀(W_E) = A + B · log₁₀(W_TO)</div>
+          <div style="font-size:.67rem;color:#6e7681;margin-top:.5rem;line-height:1.7">
+            R in statute miles &nbsp;·&nbsp; Cp in lbs/hp/hr<br>
+            V in mph &nbsp;·&nbsp; E in hours
+          </div>
+        </div>""", unsafe_allow_html=True)
+
+        # Summary table (colored)
         df_sum = pd.DataFrame({
             'Symbol': ['W_TO','Mff','W_F','W_F_used','W_tfo','W_OE','W_E_tent','W_E_allow','ΔW_E','W_PL','W_crew'],
             'Value':  [f"{Wto:,.1f}", f"{RR['Mff']:.6f}", f"{WF:,.1f}", f"{RR['WFu']:,.1f}",
                        f"{Wtfo_r:,.2f}", f"{WOE:,.1f}", f"{WE:,.2f}", f"{RR['WEa']:,.2f}",
                        f"{RR['diff']:+.2f}", f"{Wpl:,.1f}", f"{Wcrew:,.1f}"],
             'Unit':   ['lbs','—','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs']})
-        st.dataframe(df_sum, hide_index=True, use_container_width=True, height=410)
+        html_sum = make_colored_table(df_sum,
+            header_bg="#0c1220", header_text="#6a9eea",
+            row_bg="rgba(255,255,255,0.01)", row_alt_bg="rgba(106,158,234,0.02)",
+            text_color="#b0bcce", accent="#6a9eea")
+        st.markdown(html_sum, unsafe_allow_html=True)
 
-# TAB 2 — Sensitivity (no heavy plots, numeric tables only)
+# TAB 2 — SENSITIVITY
 with tab2:
-    s1, s2 = st.columns([1,1], gap="medium")
+    s1, s2 = st.columns([1, 1], gap="medium")
+
     with s1:
-        st.markdown('<div class="card card-gold"><div class="card-title">Intermediate Factors</div>', unsafe_allow_html=True)
-        st.markdown(f"<div style='padding:.5rem 0'><b>C</b> = {S['C']:.5f} &nbsp;&nbsp; <b>D</b> = {S['D']:.0f} lbs &nbsp;&nbsp; <b>F</b> = {S['F']:+.2f}</div>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="card card-gold">
+          <div class="card-title">Intermediate Factors — Eq 2.22–2.44</div>
+          <div class="sens-row" style="grid-template-columns:250px 1fr">
+            <span class="sens-partial">C = 1−(1+M_res)(1−Mff)−M_tfo</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.82rem;font-weight:700;color:var(--gold2)">{S['C']:.5f} <span style="font-size:.64rem;color:#6e7681">Eq 2.22</span></span>
+          </div>
+          <div class="sens-row" style="grid-template-columns:250px 1fr">
+            <span class="sens-partial">D = W_PL + W_crew</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.82rem;font-weight:700;color:var(--gold2)">{S['D']:,.0f} lbs <span style="font-size:.64rem;color:#6e7681">Eq 2.23</span></span>
+          </div>
+        </div>""", unsafe_allow_html=True)
 
         st.markdown('<div class="card card-blue"><div class="card-title">Cruise Sensitivities</div>', unsafe_allow_html=True)
         sens_table = pd.DataFrame([
             ['∂W_TO/∂Cp (cruise)', S['dCpR'], 'lbs/(lbs/hp/hr)', 'Eq 2.49'],
-            ['∂W_TO/∂η_p (cruise)',S['dnpR'], 'lbs', 'Eq 2.50'],
-            ['∂W_TO/∂(L/D) cruise',S['dLDR'], 'lbs', 'Eq 2.51'],
-            ['∂W_TO/∂R', S['dR'], 'lbs/nm', 'Eq 2.45'],
-        ], columns=['Partial','Value','Units','Eq'])
+            ['∂W_TO/∂η_p (cruise)',S['dnpR'], 'lbs',             'Eq 2.50'],
+            ['∂W_TO/∂(L/D) cruise',S['dLDR'], 'lbs',             'Eq 2.51'],
+            ['∂W_TO/∂R',          S['dR'],   'lbs/nm',          'Eq 2.45'] ],
+            columns=['Partial','Value','Units','Eq'])
         sens_table['Value'] = sens_table['Value'].map(lambda x: f'{x:+,.2f}')
-        st.dataframe(sens_table, hide_index=True, use_container_width=True)
+        html_sens = make_colored_table(sens_table, header_bg="#0c1220", header_text="#6a9eea",
+                                       row_bg="rgba(255,255,255,0.01)", row_alt_bg="rgba(106,158,234,0.02)",
+                                       text_color="#b0bcce", accent="#6a9eea")
+        st.markdown(html_sens, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with s2:
         st.markdown('<div class="card card-amber"><div class="card-title">Loiter Sensitivities</div>', unsafe_allow_html=True)
         sens_table2 = pd.DataFrame([
             ['∂W_TO/∂Cp (loiter)',  S['dCpE'], 'lbs/(lbs/hp/hr)', 'Eq 2.49'],
-            ['∂W_TO/∂η_p (loiter)', S['dnpE'], 'lbs', 'Eq 2.50'],
-            ['∂W_TO/∂(L/D) loiter',S['dLDE'], 'lbs', 'Eq 2.51'],
-        ], columns=['Partial','Value','Units','Eq'])
+            ['∂W_TO/∂η_p (loiter)', S['dnpE'], 'lbs',             'Eq 2.50'],
+            ['∂W_TO/∂(L/D) loiter',S['dLDE'], 'lbs',             'Eq 2.51']],
+            columns=['Partial','Value','Units','Eq'])
         sens_table2['Value'] = sens_table2['Value'].map(lambda x: f'{x:+,.2f}')
-        st.dataframe(sens_table2, hide_index=True, use_container_width=True)
+        html_sens2 = make_colored_table(sens_table2, header_bg="#0c1220", header_text="#e3b341",
+                                       row_bg="rgba(255,255,255,0.01)", row_alt_bg="rgba(227,179,65,0.02)",
+                                       text_color="#b0bcce", accent="#e3b341")
+        st.markdown(html_sens2, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-# TAB 4 — EXPORT (improved PDF generation and CSV)
+# TAB 4 — EXPORT
 with tab4:
-    ex1, ex2 = st.columns([1,1], gap="medium")
+    ex1, ex2 = st.columns([1, 1], gap="medium")
+
     with ex1:
         st.markdown('<div class="sec-div">CSV Export</div>', unsafe_allow_html=True)
         rows = {
@@ -324,7 +792,22 @@ with tab4:
             'Units':     ['lbs','—','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs',
                           's.m.','mph','—','—','lbs']}
         df_export = pd.DataFrame(rows)
-        st.dataframe(df_export, hide_index=True, use_container_width=True)
+        # Format values for display
+        df_export_vis = df_export.copy()
+        def fmt_val(x):
+            try:
+                if isinstance(x, (int, float, np.integer, np.floating)):
+                    return f"{x:,.4f}"
+                else:
+                    return str(x)
+            except:
+                return str(x)
+        df_export_vis['Value'] = df_export_vis['Value'].map(fmt_val)
+        html_export = make_colored_table(df_export_vis, header_bg="#0c1220", header_text="#c8a86c",
+                                         row_bg="rgba(255,255,255,0.01)", row_alt_bg="rgba(200,168,108,0.02)",
+                                         text_color="#b0bcce", accent="#c8a86c")
+        st.markdown(html_export, unsafe_allow_html=True)
+
         b = io.StringIO()
         df_export.to_csv(b, index=False)
         st.download_button("⬇  Full Results (CSV)", b.getvalue(),
@@ -346,7 +829,6 @@ with tab4:
 
             sH1  = ps('H1',  fontSize=11, fontName='Helvetica-Bold', textColor=colors.HexColor('#c8a86c'), spaceBefore=8, spaceAfter=4)
             sSUB = ps('SU',  fontSize=8,  textColor=colors.HexColor('#94A3B8'), leading=12, spaceAfter=2)
-            sEQ  = ps('EQ',  fontSize=8,  fontName='Courier', textColor=colors.HexColor('#6a9eea'), leading=12, spaceAfter=3)
 
             def ts(hdr=colors.HexColor('#0D1B2A'), alt=colors.white):
                 return TableStyle([
@@ -389,7 +871,7 @@ with tab4:
             t_in.setStyle(ts()); story.append(t_in)
             story.append(Spacer(1, 8))
 
-            # Sizing results table (clear ordering)
+            # Sizing results table
             story.append(Paragraph('Sizing Results', ps('h', fontSize=9, fontName='Helvetica-Bold')))
             t_res = Table([
                 ['Quantity', 'Value (lbs)', 'Notes'],
@@ -415,7 +897,6 @@ with tab4:
             t_sen = Table(sens_data, colWidths=[PW*0.45, PW*0.25, PW*0.25])
             t_sen.setStyle(ts()); story.append(t_sen)
 
-            # Footer
             story.append(Spacer(1, 10))
             story.append(HRFlowable(width=PW, thickness=0.4, color=colors.HexColor('#c8a86c')))
             story.append(Paragraph('Generated by AeroSizer Pro · Raymer (2018)', ps('f', fontSize=7, textColor=colors.HexColor('#94A3B8'), alignment=TA_CENTER)))
@@ -428,7 +909,7 @@ with tab4:
             "aerosizer_report.pdf", "application/pdf",
             use_container_width=True)
 
-# TAB 5 — REFERENCES (kept)
+# TAB 5 — REFERENCES
 with tab5:
     refs = [
         ("Eq 2.9",  "Cruise Phase — Breguet Range Equation",
