@@ -23,12 +23,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-st.markdown("""<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-})(window,document,'script','dataLayer','GTM-T8JSQMHD');</script>""",
-unsafe_allow_html=True)
+st.markdown("""<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start': new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0], j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src= 'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f); })(window,document,'script','dataLayer','GTM-T8JSQMHD');</script>""", unsafe_allow_html=True)
 
 CSS = """
 <style>
@@ -423,7 +418,6 @@ with st.sidebar:
 
     st.markdown("<br>", unsafe_allow_html=True)
     calc  = st.button("⟳  Run Sizing", use_container_width=True)
-
 
 # ─── Solve ───
 P = dict(
@@ -887,7 +881,7 @@ with tab2:
 
 
 # ─────────────────────────────────────────────────────────
-# TAB 3 — Charts
+# TAB 3 — Charts  (✈ ENHANCED ANIMATED FLIGHT PATH)
 # ─────────────────────────────────────────────────────────
 with tab3:
     DARK3 = dict(
@@ -903,7 +897,269 @@ with tab3:
         return dict(text=t, font=dict(color='#c8a86c', size=12,
                                       family='DM Serif Display'))
 
+    # ══════════════════════════════════════════════════════════════════════
+    # CHART 0 — Animated Mission Flight Path  ✈  (NEW)
+    # ══════════════════════════════════════════════════════════════════════
+    st.markdown(
+        '<div class="sec-div">Chart 0 — Animated Mission Flight Path'
+        ' &nbsp;·&nbsp; press ▶ Fly to animate the ✈</div>',
+        unsafe_allow_html=True)
+
+    # Waypoints: (dist_fraction, alt_fraction, label, text_position)
+    _waypoints = [
+        (0.000, 0.000, "Engine Start", "bottom center"),
+        (0.040, 0.000, "Taxi",         "bottom center"),
+        (0.085, 0.130, "Takeoff",      "bottom center"),
+        (0.190, 1.000, "Climb",        "top center"),
+        (0.660, 1.000, "Cruise",       "top center"),
+        (0.760, 0.680, "Loiter",       "top center"),
+        (0.890, 0.130, "Descent",      "bottom center"),
+        (1.000, 0.000, "Landing",      "bottom center"),
+    ]
+
+    _CRUISE_ALT_FT = 25_000          # FL250 for regional turboprop
+    _wx = np.array([w[0] for w in _waypoints])
+    _wy = np.array([w[1] for w in _waypoints])
+
+    # Cubic spline (scipy) or linear fallback
+    try:
+        from scipy.interpolate import CubicSpline
+        _cs  = CubicSpline(_wx, _wy, bc_type='clamped')
+        _t   = np.linspace(0, 1, 400)
+        _ys  = np.clip(_cs(_t), 0, None)
+    except ImportError:
+        _t  = np.linspace(0, 1, 400)
+        _ys = np.interp(_t, _wx, _wy)
+
+    _dist_km = _t  * float(R_nm) * 1.852
+    _alt_ft  = _ys * _CRUISE_ALT_FT
+    _wp_dist = _wx * float(R_nm) * 1.852
+    _wp_alt  = _wy * _CRUISE_ALT_FT
+    _total_km = float(R_nm) * 1.852
+
+    # ── Colour palette ────────────────────────────────────────────────────
+    _GOLD    = "#c8a86c"
+    _GOLD2   = "#e4c88a"
+    _GOLD_F  = "rgba(200,168,108,0.13)"
+    _TRAIL_C = "rgba(228,200,138,0.90)"
+    _TC      = "#8b949e"
+    _GREEN   = "#3fb950"
+    _GRID_C  = "rgba(255,255,255,0.04)"
+    _BG_C    = "rgba(11,15,22,0.85)"
+
+    # ── Static base traces ────────────────────────────────────────────────
+    _area_tr = go.Scatter(
+        x=_dist_km, y=_alt_ft,
+        mode="none", fill="tozeroy",
+        fillcolor=_GOLD_F,
+        hoverinfo="skip", showlegend=False)
+
+    _line_tr = go.Scatter(
+        x=_dist_km, y=_alt_ft,
+        mode="lines",
+        line=dict(color=_GOLD, width=2.2, shape="spline", smoothing=1.3),
+        name="Flight path",
+        hovertemplate="Dist: %{x:,.0f} km<br>Alt: %{y:,.0f} ft<extra></extra>",
+        showlegend=False)
+
+    _dot_tr = go.Scatter(
+        x=_wp_dist, y=_wp_alt,
+        mode="markers+text",
+        marker=dict(color=_GOLD2, size=9,
+                    line=dict(color="#07090d", width=1.5), symbol="circle"),
+        text=[w[2] for w in _waypoints],
+        textposition=[w[3] for w in _waypoints],
+        textfont=dict(size=8.5, color=_TC, family="JetBrains Mono"),
+        hovertemplate="%{text}<extra></extra>",
+        showlegend=False)
+
+    # ── Animation frames ──────────────────────────────────────────────────
+    _N_FRAMES = 80
+    _TRAIL    = 60          # tail length in data-points
+    _f_idxs   = np.linspace(0, len(_t) - 1, _N_FRAMES, dtype=int)
+
+    _frames = []
+    for _fi, _idx in enumerate(_f_idxs):
+        _ts = max(0, _idx - _TRAIL)
+        _tx = _dist_km[_ts:_idx + 1]
+        _ty = _alt_ft[_ts:_idx + 1]
+
+        _frames.append(go.Frame(
+            name=str(_fi),
+            data=[
+                _area_tr,
+                _line_tr,
+                _dot_tr,
+                # Glowing golden trail
+                go.Scatter(
+                    x=_tx, y=_ty,
+                    mode="lines",
+                    line=dict(color=_TRAIL_C, width=5, shape="spline"),
+                    showlegend=False, hoverinfo="skip"),
+                # ✈ Airplane — large golden emoji as text marker
+                go.Scatter(
+                    x=[_dist_km[_idx]],
+                    y=[_alt_ft[_idx]],
+                    mode="markers+text",
+                    marker=dict(symbol="circle", size=1,
+                                color="rgba(0,0,0,0)"),
+                    text=["✈"],
+                    textposition="middle center",
+                    textfont=dict(size=28, color=_GOLD2,
+                                  family="Arial Unicode MS, Arial"),
+                    showlegend=False, hoverinfo="skip"),
+            ],
+            traces=[0, 1, 2, 3, 4],
+        ))
+
+    # ── Assemble figure ───────────────────────────────────────────────────
+    _fig_fp = go.Figure(
+        data=[
+            _area_tr,
+            _line_tr,
+            _dot_tr,
+            # Initial empty trail
+            go.Scatter(x=[], y=[], mode="lines",
+                       line=dict(color=_TRAIL_C, width=5),
+                       showlegend=False, hoverinfo="skip"),
+            # Initial airplane at runway threshold
+            go.Scatter(
+                x=[_dist_km[0]], y=[_alt_ft[0]],
+                mode="markers+text",
+                marker=dict(symbol="circle", size=1, color="rgba(0,0,0,0)"),
+                text=["✈"],
+                textposition="middle center",
+                textfont=dict(size=28, color=_GOLD2,
+                              family="Arial Unicode MS, Arial"),
+                showlegend=False, hoverinfo="skip"),
+        ],
+        frames=_frames,
+    )
+
+    _fig_fp.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor=_BG_C,
+        height=420,
+        margin=dict(l=68, r=18, t=56, b=90),
+        font=dict(family="JetBrains Mono", color=_TC, size=9),
+        title=dict(
+            text=(
+                f"<b><span style='color:{_GOLD}'>Mission Flight Path</span></b>"
+                f"<span style='color:{_TC};font-size:10px'>"
+                f"  ·  {int(npax)} pax  ·  {int(R_nm)} nm  "
+                f"·  FL{int(_CRUISE_ALT_FT//100):03d} cruise  "
+                f"·  Mff = {RR['Mff']:.5f}</span>"
+            ),
+            font=dict(size=13, family="DM Serif Display, serif"),
+            x=0.01, xanchor="left",
+        ),
+        xaxis=dict(
+            title=dict(text="Distance (km)", font=dict(size=9, color=_TC)),
+            gridcolor=_GRID_C,
+            linecolor="rgba(255,255,255,0.09)",
+            tickfont=dict(size=8, color=_TC),
+            range=[-_total_km * 0.025, _total_km * 1.06],
+            zeroline=False,
+        ),
+        yaxis=dict(
+            title=dict(text="Altitude (ft)", font=dict(size=9, color=_TC)),
+            gridcolor=_GRID_C,
+            linecolor="rgba(255,255,255,0.09)",
+            tickfont=dict(size=8, color=_TC),
+            range=[-2200, _CRUISE_ALT_FT * 1.30],
+            tickformat=",d",
+            zeroline=True,
+            zerolinecolor="rgba(255,255,255,0.10)",
+            zerolinewidth=1,
+        ),
+        showlegend=False,
+        # ── Animation controls ──────────────────────────────────────────
+        updatemenus=[dict(
+            type="buttons",
+            showactive=False,
+            x=0.0, y=-0.22,
+            xanchor="left", yanchor="top",
+            bgcolor="rgba(12,15,22,0.95)",
+            bordercolor="rgba(200,168,108,0.40)",
+            borderwidth=1,
+            font=dict(size=12, color=_GOLD2, family="JetBrains Mono"),
+            buttons=[
+                dict(
+                    label="▶  Fly",
+                    method="animate",
+                    args=[None, dict(
+                        frame=dict(duration=28, redraw=True),
+                        fromcurrent=True,
+                        transition=dict(duration=0),
+                        mode="immediate")]),
+                dict(
+                    label="  ⏸  Pause  ",
+                    method="animate",
+                    args=[[None], dict(
+                        frame=dict(duration=0, redraw=False),
+                        mode="immediate",
+                        transition=dict(duration=0))]),
+                dict(
+                    label="  ↺  Reset  ",
+                    method="animate",
+                    args=[["0"], dict(
+                        frame=dict(duration=0, redraw=True),
+                        mode="immediate",
+                        transition=dict(duration=0))]),
+            ],
+        )],
+        sliders=[dict(
+            active=0,
+            pad=dict(t=14, b=0, l=0),
+            len=1.0, x=0.0, y=-0.12,
+            bgcolor="rgba(0,0,0,0)",
+            bordercolor="rgba(200,168,108,0.20)",
+            tickcolor="rgba(200,168,108,0.30)",
+            currentvalue=dict(visible=False),
+            font=dict(size=7, color=_TC),
+            steps=[
+                dict(
+                    method="animate",
+                    label="",
+                    args=[[str(_fi)], dict(
+                        frame=dict(duration=0, redraw=True),
+                        mode="immediate",
+                        transition=dict(duration=0))],
+                )
+                for _fi in range(_N_FRAMES)
+            ],
+        )],
+    )
+
+    # FL250 cruise altitude dashed reference
+    _fig_fp.add_hline(
+        y=_CRUISE_ALT_FT,
+        line=dict(color="rgba(72,117,194,0.28)", width=1, dash="dot"),
+        annotation_text=f"FL{int(_CRUISE_ALT_FT//100):03d}",
+        annotation_font=dict(size=8, color="rgba(106,158,234,0.7)",
+                             family="JetBrains Mono"),
+        annotation_position="left",
+    )
+
+    # Ground line
+    _fig_fp.add_hline(
+        y=0,
+        line=dict(color="rgba(63,185,80,0.20)", width=1),
+    )
+
+    st.plotly_chart(_fig_fp, use_container_width=True)
+    st.markdown(
+        f'<div style="font-size:.68rem;color:#6e7681;margin:-6px 0 18px;line-height:1.7">'
+        f'<b style="color:{_GOLD2}">✈ Golden airplane</b> sweeps from takeoff to landing  '
+        f'&nbsp;·&nbsp; Press <b style="color:{_GOLD2}">▶ Fly</b> to animate  '
+        f'&nbsp;·&nbsp; Drag the slider to scrub through the flight  '
+        f'&nbsp;·&nbsp; Cubic-spline altitude profile across 8 Raymer mission phases'
+        f'</div>',
+        unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════════════════
     # Chart 1 — Phase fractions
+    # ══════════════════════════════════════════════════════════════════════
     st.markdown(
         '<div class="sec-div">Chart 1 — Mission Phase Weight Fractions</div>',
         unsafe_allow_html=True)
@@ -943,7 +1199,9 @@ with tab3:
         f'Cruise fraction = {[v for v,t,_ in RR["phases"].values() if t=="Breguet"][0]:.4f}'
         f'</div>', unsafe_allow_html=True)
 
+    # ══════════════════════════════════════════════════════════════════════
     # Chart 2 — Convergence
+    # ══════════════════════════════════════════════════════════════════════
     st.markdown(
         '<div class="sec-div">Chart 2 — Sizing Convergence: '
         'W_E_tent = W_E_allow at the solution W_TO</div>',
@@ -991,7 +1249,9 @@ with tab3:
         'They intersect at the solution W_TO (green dot).</div>',
         unsafe_allow_html=True)
 
+    # ══════════════════════════════════════════════════════════════════════
     # Charts 3 & 4
+    # ══════════════════════════════════════════════════════════════════════
     st.markdown(
         '<div class="sec-div">Chart 3 — Weight Composition &nbsp;&nbsp; '
         'Chart 4 — Sensitivity Tornado</div>',
@@ -1110,23 +1370,13 @@ with tab4:
             '<div class="sec-div">PDF Report — A4 · Print-Ready</div>',
             unsafe_allow_html=True)
 
-        # ════════════════════════════════════════════════════
-        # make_pdf() — Professional A4 report
-        # White background · Black text · Gray borders
-        # All-English · LaTeX-style equations
-        # KeepTogether on every table (no page splits)
-        # Sensitivity analysis paragraph
-        # Mission Profile diagram
-        # Nomenclature table at front
-        # ════════════════════════════════════════════════════
         def make_pdf():
             buf = io.BytesIO()
             doc = SimpleDocTemplate(buf, pagesize=A4,
                 leftMargin=2.0*cm, rightMargin=2.0*cm,
                 topMargin=2.2*cm,  bottomMargin=2.2*cm)
-            PW = 17.0*cm   # usable content width
+            PW = 17.0*cm
 
-            # ── Print-friendly color palette ──
             C_WHITE   = colors.HexColor('#FFFFFF')
             C_NEAR_W  = colors.HexColor('#F8F9FA')
             C_LIGHT   = colors.HexColor('#EEF1F4')
@@ -1148,7 +1398,6 @@ with tab4:
             def ps(nm, **kw):
                 return ParagraphStyle(nm, parent=sty['Normal'], **kw)
 
-            # Typography
             sH1_RULE = ps('H1R', fontSize=12, fontName='Helvetica-Bold',
                            textColor=C_HDR, spaceBefore=14, spaceAfter=5, leading=15)
             sH2      = ps('H2',  fontSize=10, fontName='Helvetica-Bold',
@@ -1171,7 +1420,6 @@ with tab4:
             sANAL    = ps('AN',  fontSize=8.5, fontName='Helvetica',
                            textColor=C_BLACK, leading=13, spaceAfter=3)
 
-            # ── Table builder — every table stays on one page ──
             def build_table(data, col_widths, val_cols=None,
                              highlight_last=False, font_sz=8):
                 val_cols = val_cols or []
@@ -1214,7 +1462,6 @@ with tab4:
                 t.setStyle(TableStyle(style))
                 return KeepTogether(t)
 
-            # ── Drawing helpers ──
             def make_mission_profile(width=PW, height=5.5*cm):
                 d = Drawing(width, height)
                 d.add(Rect(0, 0, width, height,
@@ -1432,7 +1679,6 @@ with tab4:
                                  fontName='Helvetica', fillColor=C_DARK))
                 d.add(Line(cx_l, mb, cx_l, mb+ch,
                            strokeColor=C_GRAY, strokeWidth=0.6))
-                # Legend
                 d.add(Rect(width-mr+2, mb+ch-8, 8, 7,
                            fillColor=C_RED, strokeWidth=0))
                 d.add(String(width-mr+12, mb+ch-7,
@@ -1486,9 +1732,7 @@ with tab4:
                              fontName='Helvetica', fillColor=C_GRAY))
                 return d
 
-            # ═══════════════════════════════════════════════
-            # STORY BUILD
-            # ═══════════════════════════════════════════════
+            # ═══════════════ STORY BUILD ═══════════════
             story = []
 
             # Cover
@@ -1539,228 +1783,105 @@ with tab4:
             story.append(cv_t)
             story.append(Spacer(1, 0.3*cm))
 
-            # ── Sec 0: Nomenclature ──
             story.append(HRFlowable(width=PW, thickness=0.6, color=C_BORDER,
                                      spaceBefore=0, spaceAfter=3))
             story.append(Paragraph('0   NOMENCLATURE & SYMBOL REFERENCE', sH1_RULE))
             story.append(Paragraph(
                 'All symbols, units, and abbreviations used throughout this report '
-                'are defined below. Conventions follow Raymer (2018), Chapter 2. '
-                'This table is placed at the front as a standing reference.',
+                'are defined below. Conventions follow Raymer (2018), Chapter 2.',
                 sBODY))
             nom = [
                 ['Symbol', 'Full Name', 'Units', 'Definition'],
-                ['W_TO',   'Gross Takeoff Weight',        'lbs',
-                 'Total aircraft weight at start of mission. Primary sizing target.'],
-                ['W_E',    'Empty Weight (tentative)',     'lbs',
-                 'Computed from mission sizing: W_OE minus trapped fuel and crew.'],
-                ['W_Ea',   'Empty Weight (allowable)',     'lbs',
-                 '10^[(log10(W_TO) - A) / B]. From statistical regression.'],
-                ['delta_WE','Convergence Error',           'lbs',
-                 'W_Ea - W_E. Solution found when |delta_WE| < 1 lb.'],
-                ['W_OE',   'Operating Empty Weight',       'lbs',
-                 'W_E + W_tfo + W_crew. Aircraft ready, no payload, no usable fuel.'],
-                ['W_F',    'Total Fuel Weight',            'lbs',
-                 'W_F_used x (1 + M_res). Includes all reserves.'],
-                ['W_F_used','Usable Fuel',                 'lbs',
-                 'W_TO x (1 - Mff). Fuel burned during the mission.'],
-                ['W_tfo',  'Trapped Fuel & Oil',           'lbs',
-                 'M_tfo x W_TO. Undrainable fuel remaining in lines and tanks.'],
-                ['W_PL',   'Payload Weight',               'lbs',
-                 'N_pax x (W_pax + W_bag). Passengers and baggage.'],
-                ['W_crew', 'Crew Weight',                  'lbs',
-                 '(N_pilots + N_att) x 205 lbs/person. All crew members.'],
-                ['Mff',    'Mission Fuel Fraction',        '--',
-                 'Product of all 8 phase fractions. = W_final / W_initial.'],
-                ['R',      'Design Range',                 'nm',
-                 'Required flight distance in nautical miles.'],
-                ['Rc',     'Cruise Range (converted)',      'stat.mi',
-                 'Rc = R x 1.15078. Raymer equations require statute miles.'],
-                ['E',      'Loiter Endurance',              'hr',
-                 'Duration of loiter or reserve segment.'],
-                ['V',      'Loiter Speed',                  'kts',
-                 'Airspeed during loiter segment.'],
-                ['L/D',    'Lift-to-Drag Ratio',            '--',
-                 'Aerodynamic efficiency. Subscripts: c = cruise, l = loiter.'],
-                ['Cp',     'Specific Fuel Consumption',     'lbs/hp/hr',
-                 'Fuel mass flow per unit shaft power. Lower = more efficient.'],
-                ['eta_p',  'Propeller Efficiency',          '--',
-                 'Ratio of thrust power to shaft power. Typical: 0.75 - 0.90.'],
-                ['A',      'Regression Intercept',           '--',
-                 'Aircraft-class constant, Raymer Table 2.15.'],
-                ['B',      'Regression Slope',               '--',
-                 'Aircraft-class slope, Raymer Table 2.2 / 2.15.'],
-                ['F',      'Sizing Multiplier',              'lbs',
-                 '-B x W_TO^2 x (1+M_res) x Mff / denom. Scales all partials.'],
-                ['C',      'Fuel Availability Factor',       '--',
-                 '1 - (1+M_res)(1-Mff) - M_tfo. Internal factor, Eq. 2.22.'],
-                ['D',      'Fixed Weight Demand',            'lbs',
-                 'W_PL + W_crew. Non-fuel, non-structural weight, Eq. 2.23.'],
+                ['W_TO',   'Gross Takeoff Weight',        'lbs',   'Total aircraft weight at start of mission.'],
+                ['W_E',    'Empty Weight (tentative)',     'lbs',   'Computed from mission sizing.'],
+                ['W_Ea',   'Empty Weight (allowable)',     'lbs',   '10^[(log10(W_TO) - A) / B]. From regression.'],
+                ['delta_WE','Convergence Error',           'lbs',   'W_Ea - W_E. Solution when |delta_WE| < 1 lb.'],
+                ['W_OE',   'Operating Empty Weight',       'lbs',   'W_E + W_tfo + W_crew.'],
+                ['W_F',    'Total Fuel Weight',            'lbs',   'W_F_used x (1 + M_res).'],
+                ['W_F_used','Usable Fuel',                 'lbs',   'W_TO x (1 - Mff).'],
+                ['W_tfo',  'Trapped Fuel & Oil',           'lbs',   'M_tfo x W_TO.'],
+                ['W_PL',   'Payload Weight',               'lbs',   'N_pax x (W_pax + W_bag).'],
+                ['W_crew', 'Crew Weight',                  'lbs',   '(N_pilots + N_att) x 205 lbs/person.'],
+                ['Mff',    'Mission Fuel Fraction',        '--',    'Product of all 8 phase fractions.'],
+                ['R',      'Design Range',                 'nm',    'Required flight distance.'],
+                ['Rc',     'Cruise Range (converted)',      'stat.mi', 'Rc = R x 1.15078.'],
+                ['E',      'Loiter Endurance',              'hr',    'Duration of loiter segment.'],
+                ['V',      'Loiter Speed',                  'kts',   'Airspeed during loiter.'],
+                ['L/D',    'Lift-to-Drag Ratio',            '--',    'Aerodynamic efficiency.'],
+                ['Cp',     'Specific Fuel Consumption',     'lbs/hp/hr', 'Fuel mass flow per unit shaft power.'],
+                ['eta_p',  'Propeller Efficiency',          '--',    'Ratio of thrust power to shaft power.'],
+                ['A',      'Regression Intercept',           '--',   'Aircraft-class constant, Raymer Table 2.15.'],
+                ['B',      'Regression Slope',               '--',   'Aircraft-class slope, Raymer Table 2.15.'],
+                ['F',      'Sizing Multiplier',              'lbs',  'Scales all partial derivatives.'],
+                ['C',      'Fuel Availability Factor',       '--',   '1 - (1+M_res)(1-Mff) - M_tfo.'],
+                ['D',      'Fixed Weight Demand',            'lbs',  'W_PL + W_crew.'],
             ]
             story.append(build_table(nom,
                 [PW*0.13, PW*0.25, PW*0.10, PW*0.52],
                 val_cols=[], font_sz=7.5))
             story.append(Spacer(1, 0.4*cm))
 
-            # ── Sec 1: Mission Inputs ──
             story.append(HRFlowable(width=PW, thickness=0.6, color=C_BORDER,
                                      spaceBefore=0, spaceAfter=3))
             story.append(Paragraph('1   MISSION INPUTS', sH1_RULE))
-            story.append(Paragraph(
-                'The following parameters are specified as inputs to the '
-                'Raymer Chapter 2 weight-sizing procedure. Numerical values '
-                'are entered in the units shown; internal unit conversions '
-                '(statute miles, mph) are applied before evaluating the '
-                'Breguet equations.',
-                sBODY))
             t_in = build_table([
                 ['Parameter', 'Value', 'Units', 'Parameter', 'Value', 'Units'],
-                ['Passengers',        str(int(npax)),  'pax',
-                 'Design Range',      str(int(R_nm)),  'nm'],
-                ['Pax body weight',   str(int(wpax)),  'lbs',
-                 'Baggage per pax',   str(int(wbag)),  'lbs'],
-                ['Flight crew',       str(int(ncrew)), 'pilots',
-                 'Cabin attendants',  str(int(natt)),  'persons'],
-                ['Cruise L/D',        f'{LDc:.1f}',   '--',
-                 'Loiter L/D',        f'{LDl:.1f}',   '--'],
-                ['Cruise Cp',         f'{Cpc:.2f}',   'lbs/hp/hr',
-                 'Loiter Cp',         f'{Cpl:.2f}',   'lbs/hp/hr'],
-                ['Cruise eta_p',      f'{npc:.2f}',   '--',
-                 'Loiter eta_p',      f'{npl:.2f}',   '--'],
-                ['Loiter endurance E',f'{El:.2f}',    'hr',
-                 'Loiter speed V',    str(int(Vl)),   'kts'],
-                ['A (regression)',    f'{A_v:.4f}',   '--',
-                 'B (regression)',    f'{B_v:.4f}',   '--'],
-                ['M_tfo',             f'{Mtfo:.3f}',  '--',
-                 'M_res',             f'{Mres:.3f}',  '--'],
+                ['Passengers',        str(int(npax)),  'pax',         'Design Range',      str(int(R_nm)),  'nm'],
+                ['Pax body weight',   str(int(wpax)),  'lbs',         'Baggage per pax',   str(int(wbag)),  'lbs'],
+                ['Flight crew',       str(int(ncrew)), 'pilots',      'Cabin attendants',  str(int(natt)),  'persons'],
+                ['Cruise L/D',        f'{LDc:.1f}',   '--',           'Loiter L/D',        f'{LDl:.1f}',   '--'],
+                ['Cruise Cp',         f'{Cpc:.2f}',   'lbs/hp/hr',   'Loiter Cp',         f'{Cpl:.2f}',   'lbs/hp/hr'],
+                ['Cruise eta_p',      f'{npc:.2f}',   '--',           'Loiter eta_p',      f'{npl:.2f}',   '--'],
+                ['Loiter endurance E',f'{El:.2f}',    'hr',           'Loiter speed V',    str(int(Vl)),   'kts'],
+                ['A (regression)',    f'{A_v:.4f}',   '--',           'B (regression)',    f'{B_v:.4f}',   '--'],
+                ['M_tfo',             f'{Mtfo:.3f}',  '--',           'M_res',             f'{Mres:.3f}',  '--'],
             ], [PW*0.24, PW*0.10, PW*0.12, PW*0.24, PW*0.10, PW*0.10],
                val_cols=[1, 4])
             story.append(t_in)
             story.append(Spacer(1, 0.4*cm))
 
-            # ── Sec 2: Equations ──
             story.append(HRFlowable(width=PW, thickness=0.6, color=C_BORDER,
                                      spaceBefore=0, spaceAfter=3))
             story.append(Paragraph('2   SIZING METHODOLOGY & KEY EQUATIONS', sH1_RULE))
             story.append(Paragraph(
                 'This report applies the iterative weight-sizing procedure '
-                'of Raymer (2018), Aircraft Design: A Conceptual Approach, '
-                'Chapter 2. The method estimates the gross takeoff weight W_TO '
-                'by iterating a sizing loop until the tentative empty weight W_E '
-                '(from the mission weight build-up) converges to the allowable '
-                'empty weight W_Ea (from the historical regression line). '
-                'Eight mission phases produce the mission fuel fraction Mff.',
+                'of Raymer (2018), Aircraft Design: A Conceptual Approach, Chapter 2.',
                 sBODY))
-            story.append(Spacer(1, 0.15*cm))
-
-            story.append(Paragraph(
-                '2.1  Breguet Cruise Range Equation  (Raymer Eq. 2.9)', sH2))
-            story.append(Paragraph(
-                'Weight fraction for the cruise phase:', sEQ_LBL))
-            story.append(Paragraph(
-                'W5/W4  =  exp[ -Rc / ( 375 x (eta_p / Cp) x (L/D) ) ]',
-                sEQ))
-            story.append(Paragraph(
-                'Rc = range in statute miles  |  eta_p = propeller efficiency  '
-                '|  Cp = SFC in lbs/hp/hr  |  L/D = cruise lift-to-drag ratio',
-                sEQ_SUB))
-
-            story.append(Paragraph(
-                '2.2  Breguet Loiter Endurance Equation  (Raymer Eq. 2.11)', sH2))
-            story.append(Paragraph(
-                'Weight fraction for the loiter / reserve phase:', sEQ_LBL))
-            story.append(Paragraph(
-                'W6/W5  =  exp[ -E*V / ( 375 x (eta_p / Cp) x (L/D) ) ]',
-                sEQ))
-            story.append(Paragraph(
-                'E = endurance in hours  |  V = loiter speed in mph  '
-                '|  Cp = SFC in lbs/hp/hr  |  L/D = loiter lift-to-drag ratio',
-                sEQ_SUB))
-
-            story.append(Paragraph(
-                '2.3  Empty Weight Regression  (Raymer Table 2.2 / 2.15)', sH2))
-            story.append(Paragraph(
-                'Allowable empty weight from historical turboprop data:', sEQ_LBL))
-            story.append(Paragraph(
-                'log10(W_E)  =  A  +  B x log10(W_TO)',
-                sEQ))
-            story.append(Paragraph(
-                f'A = {A_v:.4f}  |  B = {B_v:.4f}  '
-                '(turboprop transport, Raymer Table 2.15)',
-                sEQ_SUB))
-
+            story.append(Paragraph('2.1  Breguet Cruise Range Equation  (Raymer Eq. 2.9)', sH2))
+            story.append(Paragraph('W5/W4  =  exp[ -Rc / ( 375 x (eta_p / Cp) x (L/D) ) ]', sEQ))
+            story.append(Paragraph('2.2  Breguet Loiter Endurance Equation  (Raymer Eq. 2.11)', sH2))
+            story.append(Paragraph('W6/W5  =  exp[ -E*V / ( 375 x (eta_p / Cp) x (L/D) ) ]', sEQ))
+            story.append(Paragraph('2.3  Empty Weight Regression  (Raymer Table 2.2 / 2.15)', sH2))
+            story.append(Paragraph('log10(W_E)  =  A  +  B x log10(W_TO)', sEQ))
             story.append(Paragraph('2.4  Fuel Weight Build-Up', sH2))
-            story.append(Paragraph(
-                'W_F_used  =  W_TO x (1 - Mff)', sEQ))
-            story.append(Paragraph(
-                'W_F_total  =  W_F_used x (1 + M_res)', sEQ))
-
-            story.append(Paragraph('2.5  Applied Unit Conversions', sH2))
-            story.append(build_table([
-                ['Quantity', 'Input', 'In Units',
-                 'Converted', 'Out Units', 'Factor'],
-                ['Cruise range R',
-                 str(int(R_nm)), 'nm',
-                 f'{RR["Rc"]:.3f}', 'statute mi', 'x 1.15078'],
-                ['Loiter speed V',
-                 str(int(Vl)), 'kts',
-                 f'{RR["Vm"]:.2f}', 'mph', 'x 1.15078'],
-            ], [PW*0.22, PW*0.10, PW*0.10, PW*0.12, PW*0.14, PW*0.12],
-               val_cols=[1, 3]))
+            story.append(Paragraph('W_F_used  =  W_TO x (1 - Mff)', sEQ))
+            story.append(Paragraph('W_F_total  =  W_F_used x (1 + M_res)', sEQ))
             story.append(Spacer(1, 0.4*cm))
 
-            # ── Sec 3: Mission Profile Diagram ──
             story.append(HRFlowable(width=PW, thickness=0.6, color=C_BORDER,
                                      spaceBefore=0, spaceAfter=3))
             story.append(Paragraph('3   MISSION PROFILE DIAGRAM', sH1_RULE))
             story.append(Paragraph(
-                'Figure 1 shows the altitude-vs-distance profile for the '
-                f'{int(npax)}-passenger mission with design range {R_nm} nm. '
-                'Fixed fractions (Table 2.1) govern ground operations, '
-                'takeoff, climb, descent, and landing. Cruise and loiter '
-                'are governed by the Breguet equations of Section 2.',
+                f'Figure 1 shows the altitude-vs-distance profile for the '
+                f'{int(npax)}-passenger mission with design range {R_nm} nm.',
                 sBODY))
             story.append(Spacer(1, 0.1*cm))
             story.append(make_mission_profile(width=PW, height=5.5*cm))
-            story.append(Paragraph(
-                f'Figure 1. Mission profile: {int(npax)}-passenger turboprop, '
-                f'design range {R_nm} nm. Eight phases; cruise and loiter '
-                'use Breguet fractions.',
-                sNOTE))
             story.append(Spacer(1, 0.4*cm))
 
-            # ── Sec 4: Phase Fractions ──
             story.append(HRFlowable(width=PW, thickness=0.6, color=C_BORDER,
                                      spaceBefore=0, spaceAfter=3))
             story.append(Paragraph('4   MISSION PHASE WEIGHT FRACTIONS', sH1_RULE))
-            story.append(Paragraph(
-                'Each phase fraction Wi/Wi-1 is the weight ratio across one '
-                'mission phase. Fixed fractions come from Raymer Table 2.1 '
-                'and Figure 2.2. Breguet fractions are computed from '
-                'Equations 2.9 and 2.11. The mission fuel fraction Mff is '
-                'the product of all eight phase fractions.',
-                sBODY))
             ph_d = [['Phase', 'Wi/Wi-1', 'Type', 'Source', 'Cumulative Mff']]
             cm4  = 1.0
             for pname, (fv, ft, fs) in RR['phases'].items():
                 cm4 *= fv
                 ph_d.append([pname, f'{fv:.5f}', ft, fs, f'{cm4:.5f}'])
-            ph_d.append(['PRODUCT  (Mff)', '--', '--',
-                         'All 8 phases', f'{RR["Mff"]:.6f}'])
+            ph_d.append(['PRODUCT  (Mff)', '--', '--', 'All 8 phases', f'{RR["Mff"]:.6f}'])
             story.append(build_table(ph_d,
                 [PW*0.22, PW*0.14, PW*0.13, PW*0.13, PW*0.18],
                 val_cols=[1, 4], highlight_last=True))
             story.append(Spacer(1, 0.15*cm))
-
-            # Chart 1
-            story.append(Paragraph('Chart 1 — Phase Weight Fractions', sH2))
-            story.append(Paragraph(
-                'Blue bars = fixed fractions from Table 2.1. '
-                'Gold bars = Breguet-computed fractions. '
-                f'The cruise fraction '
-                f'({[v for v,t,_ in RR["phases"].values() if t=="Breguet"][0]:.4f}) '
-                'dominates mission fuel consumption.',
-                sBODY))
             ph_labels = list(RR['phases'].keys())
             ph_fvals  = [v for v,_,_ in RR['phases'].values()]
             ph_types  = [t for _,t,_ in RR['phases'].values()]
@@ -1771,83 +1892,35 @@ with tab4:
                                    title='Chart 1 — Phase Weight Fractions  (Wi / Wi-1)'))
             story.append(Spacer(1, 0.4*cm))
 
-            # ── Sec 5: Sizing Results ──
             story.append(HRFlowable(width=PW, thickness=0.6, color=C_BORDER,
                                      spaceBefore=0, spaceAfter=3))
             story.append(Paragraph('5   SIZING RESULTS', sH1_RULE))
-            story.append(Paragraph(
-                'Starting from Mff, the sizing loop builds all weight groups '
-                f'and iterates W_TO until convergence. The solution '
-                f'W_TO = {Wto:,.1f} lbs satisfies |W_Ea - W_E| < 1 lb, '
-                'confirming that the regression-based structural weight is '
-                'consistent with the mission-derived weight build-up.',
-                sBODY))
             res_d = [['Quantity', 'Symbol', 'Value', 'Units', 'Expression']]
             for nm, sym, vl_r, un, ex in [
-                ('Gross Takeoff Weight',     'W_TO',
-                 f'{Wto:,.2f}',       'lbs',
-                 'Bisection convergence solution'),
-                ('Total Fuel Weight',        'W_F',
-                 f'{WF:,.2f}',        'lbs',
-                 'W_TO x (1 - Mff) x (1 + M_res)'),
-                ('Usable Fuel Weight',       'W_F_used',
-                 f'{RR["WFu"]:,.2f}', 'lbs',
-                 'W_TO x (1 - Mff)'),
-                ('Trapped Fuel & Oil',       'W_tfo',
-                 f'{Wtfo_r:,.3f}',    'lbs',
-                 f'M_tfo x W_TO = {Mtfo:.3f} x {Wto:,.0f} lbs'),
-                ('Operating Empty Weight',   'W_OE',
-                 f'{WOE:,.2f}',       'lbs',
-                 'W_TO - W_F - W_PL'),
-                ('Empty Weight (tentative)', 'W_E',
-                 f'{WE:,.2f}',        'lbs',
-                 'W_OE - W_tfo - W_crew'),
-                ('Empty Weight (allowable)', 'W_Ea',
-                 f'{RR["WEa"]:,.2f}', 'lbs',
-                 '10^[(log W_TO - A) / B]'),
-                ('Convergence Error',        'delta_WE',
-                 f'{RR["diff"]:+.3f}','lbs',
-                 'W_Ea - W_E  -->  0'),
-                ('Payload Weight',           'W_PL',
-                 f'{Wpl:,.2f}',       'lbs',
-                 f'{npax} pax x ({wpax}+{wbag}) lbs'),
-                ('Crew Weight',              'W_crew',
-                 f'{Wcrew:,.2f}',     'lbs',
-                 f'{ncrew} pilots + {natt} attendant(s) x 205 lbs'),
-                ('Mission Fuel Fraction',    'Mff',
-                 f'{RR["Mff"]:.6f}',  '--',
-                 'Product of all 8 phase fractions'),
+                ('Gross Takeoff Weight',     'W_TO',      f'{Wto:,.2f}',       'lbs', 'Bisection convergence solution'),
+                ('Total Fuel Weight',        'W_F',       f'{WF:,.2f}',        'lbs', 'W_TO x (1 - Mff) x (1 + M_res)'),
+                ('Usable Fuel Weight',       'W_F_used',  f'{RR["WFu"]:,.2f}', 'lbs', 'W_TO x (1 - Mff)'),
+                ('Trapped Fuel & Oil',       'W_tfo',     f'{Wtfo_r:,.3f}',    'lbs', f'M_tfo x W_TO'),
+                ('Operating Empty Weight',   'W_OE',      f'{WOE:,.2f}',       'lbs', 'W_TO - W_F - W_PL'),
+                ('Empty Weight (tentative)', 'W_E',       f'{WE:,.2f}',        'lbs', 'W_OE - W_tfo - W_crew'),
+                ('Empty Weight (allowable)', 'W_Ea',      f'{RR["WEa"]:,.2f}', 'lbs', '10^[(log W_TO - A) / B]'),
+                ('Convergence Error',        'delta_WE',  f'{RR["diff"]:+.3f}','lbs', 'W_Ea - W_E  -->  0'),
+                ('Payload Weight',           'W_PL',      f'{Wpl:,.2f}',       'lbs', f'{npax} pax x ({wpax}+{wbag}) lbs'),
+                ('Crew Weight',              'W_crew',    f'{Wcrew:,.2f}',     'lbs', f'{ncrew} pilots + {natt} attendant(s) x 205 lbs'),
+                ('Mission Fuel Fraction',    'Mff',       f'{RR["Mff"]:.6f}',  '--',  'Product of all 8 phase fractions'),
             ]:
                 res_d.append([nm, sym, vl_r, un, ex])
             story.append(build_table(res_d,
                 [PW*0.28, PW*0.12, PW*0.13, PW*0.08, PW*0.39],
                 val_cols=[2]))
-
             story.append(Spacer(1, 0.2*cm))
-            story.append(Paragraph('Chart 2 — Sizing Loop Convergence', sH2))
-            story.append(Paragraph(
-                'The blue line is W_E (tentative) from the mission weight '
-                'build-up. The gold line is W_E (allowable) from the '
-                'regression. The green dot at their intersection is the '
-                'unique W_TO that satisfies both constraints: the structure '
-                'is strong enough to carry itself, the fuel, and the payload '
-                'without exceeding the statistically allowable empty weight.',
-                sBODY))
             story.append(make_convergence(Wto, WE, width=PW, height=5.8*cm,
                 title='Chart 2 — W_E Tentative (blue) vs W_E Allowable (gold)'))
             story.append(Spacer(1, 0.4*cm))
 
-            # ── Sec 6: Weight Ratios ──
             story.append(HRFlowable(width=PW, thickness=0.6, color=C_BORDER,
                                      spaceBefore=0, spaceAfter=3))
             story.append(Paragraph('6   WEIGHT RATIOS — SANITY CHECK', sH1_RULE))
-            story.append(Paragraph(
-                'Ratios are evaluated against typical ranges for turboprop '
-                'transports (Raymer Table 3.1; cf. ATR-42, Dash-8 Q300). '
-                f'A fuel fraction of {WF/Wto*100:.1f}% and empty-weight '
-                f'fraction of {WE/Wto*100:.1f}% are consistent with '
-                f'regional turboprops operating at {R_nm} nm range.',
-                sBODY))
             rat_d = [['Ratio', 'Computed', 'Typical Range', 'Status', 'Comment']]
             for nm, vr, lo_r, hi_r, cmt in [
                 ('W_PL / W_TO', Wpl/Wto, 0.10, 0.25, 'Payload fraction'),
@@ -1857,27 +1930,17 @@ with tab4:
             ]:
                 ok_r = lo_r <= vr <= hi_r
                 chk  = '[OK]' if ok_r else ('[HIGH]' if vr > hi_r else '[LOW]')
-                rat_d.append([nm, f'{vr:.4f}',
-                               f'{lo_r:.2f} - {hi_r:.2f}', chk, cmt])
+                rat_d.append([nm, f'{vr:.4f}', f'{lo_r:.2f} - {hi_r:.2f}', chk, cmt])
             story.append(build_table(rat_d,
                 [PW*0.22, PW*0.12, PW*0.18, PW*0.10, PW*0.28],
                 val_cols=[1]))
 
-            # Chart 3 — Pie
             story.append(Spacer(1, 0.2*cm))
-            story.append(Paragraph('Chart 3 — Weight Composition at W_TO', sH2))
-            story.append(Paragraph(
-                f'Distribution of W_TO = {Wto:,.0f} lbs across the five '
-                'major weight groups.',
-                sBODY))
-            pie_lbl = ['W_F Fuel','W_PL Payload','W_tfo Trapped',
-                       'W_crew Crew','W_E Empty']
+            pie_lbl = ['W_F Fuel','W_PL Payload','W_tfo Trapped','W_crew Crew','W_E Empty']
             pie_val = [WF, Wpl, Wtfo_r, Wcrew, WE]
             pie_col = [
-                colors.HexColor('#8B6914'),
-                colors.HexColor('#1A4A8A'),
-                colors.HexColor('#A05A00'),
-                colors.HexColor('#5A1A8A'),
+                colors.HexColor('#8B6914'), colors.HexColor('#1A4A8A'),
+                colors.HexColor('#A05A00'), colors.HexColor('#5A1A8A'),
                 colors.HexColor('#1A6B3A'),
             ]
             pie_d_draw = make_pie(pie_lbl, pie_val, pie_col,
@@ -1887,9 +1950,7 @@ with tab4:
             for lbl, val in zip(pie_lbl, pie_val):
                 leg_r.append([lbl, f'{val:,.1f}', f'{val/Wto*100:.1f}%'])
             leg_r.append(['W_TO Total', f'{Wto:,.1f}', '100.0%'])
-            leg_t = Table(leg_r,
-                           colWidths=[PW*0.24, PW*0.14, PW*0.10],
-                           splitByRow=False)
+            leg_t = Table(leg_r, colWidths=[PW*0.24, PW*0.14, PW*0.10], splitByRow=False)
             leg_t.setStyle(TableStyle([
                 ('BACKGROUND',    (0,0),  (-1,0),  C_HDR),
                 ('TEXTCOLOR',     (0,0),  (-1,0),  C_HDR_TXT),
@@ -1906,8 +1967,7 @@ with tab4:
                 ('FONTNAME',      (1,1),  (-1,-1), 'Courier'),
             ]))
             combined = Table([[pie_d_draw, leg_t]],
-                              colWidths=[8.2*cm, PW-8.2*cm],
-                              splitByRow=False)
+                              colWidths=[8.2*cm, PW-8.2*cm], splitByRow=False)
             combined.setStyle(TableStyle([
                 ('VALIGN',       (0,0),(-1,-1), 'TOP'),
                 ('LEFTPADDING',  (0,0),(-1,-1), 0),
@@ -1917,148 +1977,73 @@ with tab4:
             story.append(KeepTogether(combined))
             story.append(Spacer(1, 0.4*cm))
 
-            # ── Sec 7: Sensitivity ──
             story.append(PageBreak())
             story.append(HRFlowable(width=PW, thickness=0.6, color=C_BORDER,
                                      spaceBefore=0, spaceAfter=3))
-            story.append(Paragraph(
-                '7   SENSITIVITY ANALYSIS  (Raymer Eq. 2.44 - 2.51)',
-                sH1_RULE))
-
-            # Identify dominant parameter
+            story.append(Paragraph('7   SENSITIVITY ANALYSIS  (Raymer Eq. 2.44 - 2.51)', sH1_RULE))
             items_s = [
-                ('Cruise SFC (Cp)',           abs(S['dCpR']), S['dCpR'],
-                 'lbs/(lbs/hp/hr)'),
-                ('Cruise prop. efficiency',   abs(S['dnpR']), S['dnpR'],
-                 'lbs'),
-                ('Cruise L/D',               abs(S['dLDR']), S['dLDR'],
-                 'lbs'),
-                ('Design range R',           abs(S['dR']),   S['dR'],
-                 'lbs/nm'),
-                ('Loiter SFC (Cp)',           abs(S['dCpE']), S['dCpE'],
-                 'lbs/(lbs/hp/hr)'),
-                ('Loiter prop. efficiency',   abs(S['dnpE']), S['dnpE'],
-                 'lbs'),
-                ('Loiter L/D',               abs(S['dLDE']), S['dLDE'],
-                 'lbs'),
+                ('Cruise SFC (Cp)',           abs(S['dCpR']), S['dCpR'], 'lbs/(lbs/hp/hr)'),
+                ('Cruise prop. efficiency',   abs(S['dnpR']), S['dnpR'], 'lbs'),
+                ('Cruise L/D',               abs(S['dLDR']), S['dLDR'], 'lbs'),
+                ('Design range R',           abs(S['dR']),   S['dR'],   'lbs/nm'),
+                ('Loiter SFC (Cp)',           abs(S['dCpE']), S['dCpE'], 'lbs/(lbs/hp/hr)'),
+                ('Loiter prop. efficiency',   abs(S['dnpE']), S['dnpE'], 'lbs'),
+                ('Loiter L/D',               abs(S['dLDE']), S['dLDE'], 'lbs'),
             ]
             items_s_sorted = sorted(items_s, key=lambda x: x[0], reverse=True)
-            dom   = items_s_sorted[0]
-            sec   = items_s_sorted[1]
-            dirn  = 'increases' if dom[2] > 0 else 'decreases'
-
+            dom  = items_s_sorted[0]
+            sec  = items_s_sorted[1]
+            dirn = 'increases' if dom[2] > 0 else 'decreases'
             story.append(Paragraph(
-                'The partial derivatives dW_TO/dX quantify how sensitive '
-                'the converged gross takeoff weight is to unit changes in '
-                'each design parameter X, evaluated at the solution point. '
-                'They are derived analytically by differentiating the sizing '
-                'loop using the chain rule (Raymer Eq. 2.44-2.51). The sizing '
-                f'multiplier F = {S["F"]:,.0f} lbs propagates aerodynamic and '
-                'propulsive sensitivities through the weight build-up.',
+                f'The sizing multiplier F = {S["F"]:,.0f} lbs propagates sensitivities. '
+                f'{dom[0]} is the most influential parameter '
+                f'(dW_TO/dX = {dom[2]:+,.1f} {dom[3]}). '
+                f'Second most sensitive: {sec[0]} ({sec[2]:+,.1f} {sec[3]}).',
                 sANAL))
-            story.append(Spacer(1, 0.1*cm))
-            story.append(Paragraph(
-                f'The Tornado Diagram (Chart 4) shows that '
-                f'{dom[0]} is the most influential design parameter, '
-                f'with dW_TO/dX = {dom[2]:+,.1f} {dom[3]}. '
-                f'A unit increase in this parameter {dirn} gross takeoff weight '
-                f'by {abs(dom[2]):,.1f} lbs. '
-                f'The second most sensitive parameter is {sec[0]} '
-                f'(dW_TO/dX = {sec[2]:+,.1f} {sec[3]}). '
-                f'The dominant role of cruise SFC indicates that engine '
-                f'selection is the single most impactful technology choice '
-                f'for reducing aircraft weight at this design point. '
-                f'A 0.01 lbs/hp/hr improvement in cruise Cp would reduce '
-                f'W_TO by approximately {abs(S["dCpR"])*0.01:,.0f} lbs '
-                f'through compound loop effects.',
-                sANAL))
-            story.append(Spacer(1, 0.1*cm))
-            story.append(Paragraph(
-                f'The negative sign on propeller efficiency (eta_p) and '
-                f'lift-to-drag ratio (L/D) confirms the expected physics: '
-                f'higher aerodynamic or propulsive efficiency reduces the '
-                f'fuel required, which reduces W_TO through the sizing loop. '
-                f'Increasing design range (currently {R_nm} nm) adds '
-                f'approximately {abs(S["dR"]):.1f} lbs per nautical mile, '
-                f'making range the primary mission-level driver after '
-                f'engine technology.',
-                sANAL))
-            story.append(Spacer(1, 0.15*cm))
-
-            story.append(Paragraph('7.1  Intermediate Sizing Factors', sH2))
             fac_d = [
                 ['Factor', 'Symbol', 'Value', 'Units', 'Equation'],
-                ['Fuel availability factor', 'C',
-                 f'{S["C"]:.6f}', '--',
-                 '1 - (1+M_res)(1-Mff) - M_tfo  [Eq. 2.22]'],
-                ['Fixed weight demand', 'D',
-                 f'{S["D"]:,.2f}', 'lbs',
-                 'W_PL + W_crew  [Eq. 2.23]'],
-                ['Denominator C(1-B)W_TO - D', 'denom',
-                 f'{S["C"]*(1-float(B_v))*Wto - S["D"]:,.2f}', 'lbs',
-                 'Internal factor  [Eq. 2.44]'],
-                ['Sizing multiplier', 'F',
-                 f'{S["F"]:,.2f}', 'lbs',
-                 '-B x W_TO^2 x (1+M_res) x Mff / denom  [Eq. 2.44]'],
+                ['Fuel availability factor', 'C', f'{S["C"]:.6f}', '--', '1 - (1+M_res)(1-Mff) - M_tfo  [Eq. 2.22]'],
+                ['Fixed weight demand', 'D', f'{S["D"]:,.2f}', 'lbs', 'W_PL + W_crew  [Eq. 2.23]'],
+                ['Sizing multiplier', 'F', f'{S["F"]:,.2f}', 'lbs', '-B x W_TO^2 x (1+M_res) x Mff / denom  [Eq. 2.44]'],
             ]
             story.append(build_table(fac_d,
                 [PW*0.28, PW*0.08, PW*0.14, PW*0.08, PW*0.42],
                 val_cols=[2]))
-
             story.append(Spacer(1, 0.2*cm))
-            story.append(Paragraph(
-                '7.2  Partial Derivatives  dW_TO / dX', sH2))
-            sen_d = [['Partial Derivative', 'Value', 'Units',
-                      'Eq.', 'Physical Interpretation']]
+            sen_d = [['Partial Derivative', 'Value', 'Units', 'Eq.', 'Physical Interpretation']]
             for partial, val, unit, eq, interp in [
-                ('dW_TO / dCp  (cruise)',
-                 S['dCpR'], 'lbs/(lbs/hp/hr)', 'Eq. 2.49',
-                 '+ve: higher SFC increases fuel, raises W_TO'),
-                ('dW_TO / deta_p  (cruise)',
-                 S['dnpR'], 'lbs', 'Eq. 2.50',
-                 '-ve: better prop. efficiency reduces fuel needed'),
-                ('dW_TO / d(L/D)  (cruise)',
-                 S['dLDR'], 'lbs', 'Eq. 2.51',
-                 '-ve: higher aero efficiency reduces fuel'),
-                ('dW_TO / dR',
-                 S['dR'],   'lbs/nm', 'Eq. 2.45',
-                 '+ve: longer range requires more fuel, raises W_TO'),
-                ('dW_TO / dCp  (loiter)',
-                 S['dCpE'], 'lbs/(lbs/hp/hr)', '--',
-                 '+ve: higher loiter SFC raises reserve fuel'),
-                ('dW_TO / deta_p  (loiter)',
-                 S['dnpE'], 'lbs', '--',
-                 '-ve: better prop. eff. at loiter reduces reserve fuel'),
-                ('dW_TO / d(L/D)  (loiter)',
-                 S['dLDE'], 'lbs', '--',
-                 '-ve: higher loiter L/D reduces reserve fuel burn'),
+                ('dW_TO / dCp  (cruise)',    S['dCpR'], 'lbs/(lbs/hp/hr)', 'Eq. 2.49', '+ve: higher SFC increases fuel, raises W_TO'),
+                ('dW_TO / deta_p  (cruise)', S['dnpR'], 'lbs', 'Eq. 2.50', '-ve: better prop. efficiency reduces fuel needed'),
+                ('dW_TO / d(L/D)  (cruise)', S['dLDR'], 'lbs', 'Eq. 2.51', '-ve: higher aero efficiency reduces fuel'),
+                ('dW_TO / dR',               S['dR'],   'lbs/nm', 'Eq. 2.45', '+ve: longer range requires more fuel'),
+                ('dW_TO / dCp  (loiter)',    S['dCpE'], 'lbs/(lbs/hp/hr)', '--', '+ve: higher loiter SFC raises reserve fuel'),
+                ('dW_TO / deta_p  (loiter)', S['dnpE'], 'lbs', '--', '-ve: better prop. eff. reduces reserve fuel'),
+                ('dW_TO / d(L/D)  (loiter)', S['dLDE'], 'lbs', '--', '-ve: higher loiter L/D reduces reserve fuel'),
             ]:
                 sen_d.append([partial, f'{val:+,.2f}', unit, eq, interp])
-
             sen_t = Table(sen_d,
-                           colWidths=[PW*0.28, PW*0.12, PW*0.18,
-                                      PW*0.08, PW*0.34],
-                           repeatRows=1, splitByRow=False)
+                          colWidths=[PW*0.28, PW*0.12, PW*0.18, PW*0.08, PW*0.34],
+                          repeatRows=1, splitByRow=False)
             sen_style = [
-                ('BACKGROUND',    (0,0),  (-1,0),  C_HDR),
-                ('TEXTCOLOR',     (0,0),  (-1,0),  C_HDR_TXT),
-                ('FONTNAME',      (0,0),  (-1,0),  'Helvetica-Bold'),
-                ('FONTSIZE',      (0,0),  (-1,-1), 7.5),
-                ('LEADING',       (0,0),  (-1,-1), 11),
-                ('GRID',          (0,0),  (-1,-1), 0.4, C_BORDER),
-                ('LINEBELOW',     (0,0),  (-1,0),  1.5, C_GOLD),
-                ('VALIGN',        (0,0),  (-1,-1), 'MIDDLE'),
-                ('LEFTPADDING',   (0,0),  (-1,-1), 6),
-                ('RIGHTPADDING',  (0,0),  (-1,-1), 6),
-                ('TOPPADDING',    (0,0),  (-1,-1), 3),
-                ('BOTTOMPADDING', (0,0),  (-1,-1), 3),
-                ('TEXTCOLOR',     (0,1),  (-1,-1), C_BLACK),
-                ('FONTNAME',      (0,1),  (0,-1),  'Helvetica-Bold'),
-                ('TEXTCOLOR',     (0,1),  (0,-1),  C_DARK),
+                ('BACKGROUND', (0,0), (-1,0), C_HDR),
+                ('TEXTCOLOR',  (0,0), (-1,0), C_HDR_TXT),
+                ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTSIZE',   (0,0), (-1,-1), 7.5),
+                ('LEADING',    (0,0), (-1,-1), 11),
+                ('GRID',       (0,0), (-1,-1), 0.4, C_BORDER),
+                ('LINEBELOW',  (0,0), (-1,0),  1.5, C_GOLD),
+                ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+                ('LEFTPADDING',(0,0), (-1,-1), 6),
+                ('RIGHTPADDING',(0,0),(-1,-1), 6),
+                ('TOPPADDING', (0,0), (-1,-1), 3),
+                ('BOTTOMPADDING',(0,0),(-1,-1),3),
+                ('TEXTCOLOR',  (0,1), (-1,-1), C_BLACK),
+                ('FONTNAME',   (0,1), (0,-1),  'Helvetica-Bold'),
+                ('TEXTCOLOR',  (0,1), (0,-1),  C_DARK),
             ]
             for ri in range(1, len(sen_d)):
-                val_num = [S['dCpR'], S['dnpR'], S['dLDR'], S['dR'],
-                           S['dCpE'], S['dnpE'], S['dLDE']][ri-1]
+                val_num = [S['dCpR'],S['dnpR'],S['dLDR'],S['dR'],
+                           S['dCpE'],S['dnpE'],S['dLDE']][ri-1]
                 col = C_RED if val_num > 0 else C_GREEN
                 bg  = C_NEAR_W if ri % 2 == 1 else C_WHITE
                 sen_style += [
@@ -2068,60 +2053,26 @@ with tab4:
                 ]
             sen_t.setStyle(TableStyle(sen_style))
             story.append(KeepTogether(sen_t))
-
-            # Chart 4 — Tornado
             story.append(Spacer(1, 0.25*cm))
-            story.append(Paragraph('Chart 4 — Sensitivity Tornado Diagram', sH2))
             story.append(make_tornado(S, width=PW, height=6.0*cm,
                 title='Chart 4 — dW_TO/dX  |  Sorted by Absolute Magnitude'))
-            story.append(Paragraph(
-                'Chart 4. Parameters ranked by |dW_TO/dX|. '
-                'Red bars: increasing X raises W_TO. '
-                'Green bars: increasing X reduces W_TO.',
-                sNOTE))
-            story.append(Spacer(1, 0.3*cm))
 
-            # Design Recommendation
-            story.append(Paragraph('7.3  Design Recommendation', sH2))
-            story.append(Paragraph(
-                f'The sensitivity analysis identifies engine efficiency '
-                f'(cruise Cp) as the primary weight-reduction lever. '
-                f'With dW_TO/dCp = {S["dCpR"]:,.0f} lbs/(lbs/hp/hr), '
-                f'a 5% improvement in SFC (from {Cpc:.2f} to '
-                f'{Cpc*0.95:.3f} lbs/hp/hr) reduces W_TO by approximately '
-                f'{abs(S["dCpR"]*Cpc*0.05):,.0f} lbs through the sizing loop. '
-                f'The second recommendation is to protect cruise L/D: '
-                f'a one-unit degradation ({LDc:.1f} to {LDc-1:.1f}) would '
-                f'increase W_TO by {abs(S["dLDR"]):,.0f} lbs. '
-                f'These two parameters should be treated as primary constraints '
-                f'in subsequent aerodynamic and configuration design trades.',
-                sANAL))
-
-            story.append(Spacer(1, 0.2*cm))
-            story.append(Paragraph(
-                f'7.4  Range Trade Study  (dW_TO/dR = {S["dR"]:.2f} lbs/nm)',
-                sH2))
-            trd_d = [
-                ['Delta Range (nm)', 'Delta W_TO (lbs)',
-                 'New W_TO (lbs)', 'Trend']
-            ]
+            trd_d = [['Delta Range (nm)', 'Delta W_TO (lbs)', 'New W_TO (lbs)', 'Trend']]
             for dr in [-300, -200, -100, +100, +200, +300]:
                 dw = S['dR'] * dr
                 nw = Wto + dw
                 trd_d.append([f'{dr:+d} nm', f'{dw:+,.1f} lbs',
-                               f'{nw:,.1f} lbs',
-                               'LIGHTER' if dw < 0 else 'HEAVIER'])
+                               f'{nw:,.1f} lbs', 'LIGHTER' if dw < 0 else 'HEAVIER'])
+            story.append(Spacer(1, 0.2*cm))
             story.append(build_table(trd_d,
                 [PW*0.22, PW*0.24, PW*0.22, PW*0.16],
                 val_cols=[1, 2]))
 
-            # Footer
             story.append(Spacer(1, 0.5*cm))
             story.append(HRFlowable(width=PW, thickness=0.5, color=C_BORDER,
                                      spaceBefore=3, spaceAfter=4))
             story.append(Paragraph(
-                f'AeroSizer Pro  —  Raymer (2018): Aircraft Design, '
-                f'A Conceptual Approach  —  '
+                f'AeroSizer Pro  —  Raymer (2018): Aircraft Design, A Conceptual Approach  —  '
                 f'W_TO = {Wto:,.1f} lbs  |  Mff = {RR["Mff"]:.6f}  |  '
                 f'{"CONVERGED" if conv else "NOT CONVERGED"}',
                 sFOOT))
@@ -2130,26 +2081,21 @@ with tab4:
             buf.seek(0)
             return buf.read()
 
-        # ── PDF info card ──
         st.markdown(f"""
         <div class="card card-gold">
           <div class="card-title">PDF Report Contents — A4 Print-Ready</div>
           <div style="font-size:.77rem;color:var(--text);line-height:2.0">
-            <b style="color:var(--gold2)">Sec 0</b> · Nomenclature & symbol reference (front)<br>
+            <b style="color:var(--gold2)">Sec 0</b> · Nomenclature & symbol reference<br>
             <b style="color:var(--gold2)">Sec 1</b> · Mission inputs table<br>
-            <b style="color:var(--gold2)">Sec 2</b> · Methodology + LaTeX-style equations
-                     (Eq. 2.9, 2.11, regression, fuel build-up)<br>
-            <b style="color:var(--gold2)">Sec 3</b> · Mission profile diagram
-                     (Altitude vs. Distance, 8 phases)<br>
+            <b style="color:var(--gold2)">Sec 2</b> · Methodology + equations (Eq. 2.9, 2.11, regression)<br>
+            <b style="color:var(--gold2)">Sec 3</b> · Mission profile diagram (Altitude vs. Distance)<br>
             <b style="color:var(--gold2)">Sec 4</b> · Phase fractions table + Chart 1<br>
             <b style="color:var(--gold2)">Sec 5</b> · Sizing results + Chart 2 (convergence)<br>
             <b style="color:var(--gold2)">Sec 6</b> · Weight ratios sanity check + Chart 3 (pie)<br>
-            <b style="color:var(--gold2)">Sec 7</b> · Sensitivity analysis paragraph +
-                     Chart 4 (Tornado) + design recommendation + range trade
+            <b style="color:var(--gold2)">Sec 7</b> · Sensitivity analysis + Chart 4 (Tornado) + range trade
           </div>
           <div style="margin-top:.65rem;font-size:.67rem;color:#6e7681">
             White background · Black text · Gray borders · All units labelled ·
-            No table splits across pages ·
             {'✓ Ready to export' if conv else '⚠ Check convergence before export'}
           </div>
         </div>""", unsafe_allow_html=True)
