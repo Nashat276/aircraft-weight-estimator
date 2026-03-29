@@ -20,8 +20,7 @@ st.markdown("""<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start'
 new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
 j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-})(window,document,'script','dataLayer','GTM-T8JSQMHD');</script>""",
-unsafe_allow_html=True)
+})(window,document,'script','dataLayer','GTM-T8JSQMHD');</script>""", unsafe_allow_html=True)
 
 CSS = """
 <style>
@@ -162,7 +161,7 @@ html,body,[class*="css"]{background:var(--bg)!important;color:var(--text)!import
 .mh-title{font-family:'DM Serif Display',serif;font-size:1.35rem;color:var(--white);letter-spacing:-.03em;line-height:1;position:relative;z-index:1;}
 .mh-title span{background:linear-gradient(135deg,var(--gold),var(--gold2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
 
-/* ── DATAFRAME — dark, no white ── */
+/* ── DATAFRAME ── */
 [data-testid="stDataFrame"]{border:1px solid var(--border)!important;border-radius:10px!important;overflow:hidden!important;}
 [data-testid="stDataFrame"] *{background-color:transparent!important;}
 [data-testid="stDataFrame"] table{border-collapse:collapse!important;width:100%!important;}
@@ -174,9 +173,6 @@ html,body,[class*="css"]{background:var(--bg)!important;color:var(--text)!import
 [data-testid="stDataFrame"] tbody td:first-child{color:var(--text2)!important;font-size:.72rem!important;}
 [data-testid="stDataFrame"] ::-webkit-scrollbar{height:3px!important;}
 [data-testid="stDataFrame"] ::-webkit-scrollbar-thumb{background:rgba(200,168,108,.22)!important;}
-/* Kill any white backgrounds injected by Streamlit */
-[data-testid="stDataFrame"] [class*="glideDataEditor"]{background:var(--sur)!important;}
-[data-testid="stDataFrame"] [style*="background: white"],[data-testid="stDataFrame"] [style*="background-color: white"],[data-testid="stDataFrame"] [style*="background:#fff"],[data-testid="stDataFrame"] [style*="background: rgb(255"]{background:var(--sur)!important;}
 
 /* ── DOWNLOAD ── */
 div.stDownloadButton>button{background:var(--pan)!important;color:var(--gold)!important;border:1px solid rgba(200,168,108,.22)!important;border-radius:8px!important;font-size:.79rem!important;font-weight:600!important;padding:.52rem 1rem!important;width:100%!important;transition:all .2s!important;}
@@ -194,20 +190,18 @@ def compute_mission(p):
     All units as specified: R in nm (converted internally), V in kts,
     Cp in lbs/hp/hr, E in hours.
     """
-    Wpl   = p['npax'] * (p['wpax'] + p['wbag'])          # payload weight
-    Wcrew = (p['ncrew'] + p['natt']) * 205                # crew weight (205 lb/person)
-    Wtfo  = p['Wto'] * p['Mtfo']                          # trapped fuel & oil
+    Wpl   = p['npax'] * (p['wpax'] + p['wbag'])
+    Wcrew = (p['ncrew'] + p['natt']) * 205
+    Wtfo  = p['Wto'] * p['Mtfo']
 
     # Unit conversions required by Raymer equations
-    Rc = p['R']  * 1.15078    # nm → statute miles (Raymer uses statute miles)
+    Rc = p['R']  * 1.15078    # nm → statute miles
     Vm = p['Vl'] * 1.15078    # knots → mph
 
     # Eq. 2.9 — Breguet cruise weight fraction (propeller)
-    # W5/W4 = 1/exp[Rc / (375 * (η_p/Cp) * (L/D))]
     W5 = 1.0 / math.exp(Rc / (375.0 * (p['npc'] / p['Cpc']) * p['LDc']))
 
     # Eq. 2.11 — Breguet loiter weight fraction (propeller)
-    # W6/W5 = 1/exp[E / (375 * (1/V) * (η_p/Cp) * (L/D))]
     W6 = 1.0 / math.exp(p['El'] / (375.0 * (1.0 / Vm) * (p['npl'] / p['Cpl']) * p['LDl']))
 
     # Table 2.1 — Fixed phase fractions
@@ -226,23 +220,22 @@ def compute_mission(p):
         Mff *= v
 
     # Fuel weights
-    WFu  = p['Wto'] * (1.0 - Mff)                        # usable fuel
-    WF   = WFu * (1.0 + p['Mr'])                          # total fuel incl. reserve
-    # Note: Raymer defines W_F = W_Fused + W_reserve = W_TO*(1-Mff)*(1+M_res)
-    # Some editions use W_F = W_TO*(1-Mff) + M_res*W_TO*(1-Mff)
+    WFu  = p['Wto'] * (1.0 - Mff)
+    WF   = WFu * (1.0 + p['Mr'])
 
-    WOE  = p['Wto'] - WF - Wpl                            # operating empty weight (tentative)
-    WE   = WOE - Wtfo - Wcrew                             # empty weight (tentative)
+    WOE  = p['Wto'] - WF - Wpl
+    WE   = WOE - Wtfo - Wcrew
 
-    # Regression line (Table 2.2 / 2.15): log10(W_E) = A + B*log10(W_TO)
-    WEa  = 10.0 ** ((math.log10(p['Wto']) - p['A']) / p['B'])  # allowable empty weight
+    # Regression: log10(W_E) = A + B*log10(W_TO)
+    WEa  = 10.0 ** ((math.log10(p['Wto']) - p['A']) / p['B'])
 
     return dict(
         Wpl=Wpl, Wcrew=Wcrew, Wtfo=Wtfo, Mff=Mff,
         WF=WF, WFu=WFu, WOE=WOE, WE=WE, WEa=WEa,
-        diff=WEa - WE,   # convergence criterion: diff → 0
+        diff=WEa - WE,
         phases=phases, Rc=Rc, Vm=Vm
     )
+
 
 def solve_Wto(p, tol=0.5, n=500):
     """Bisection solver: find W_TO where W_E_tent = W_E_allow (diff=0)."""
@@ -259,7 +252,7 @@ def solve_Wto(p, tol=0.5, n=500):
         if prev_d is not None and prev_d * d <= 0:
             lo, hi = float(prev_w), float(w); break
         prev_d, prev_w = d, w
-    if lo is None:                              # wide fallback
+    if lo is None:
         prev_d = prev_w = None
         for w in range(5000, 600001, 1000):
             pp['Wto'] = float(w)
@@ -279,6 +272,7 @@ def solve_Wto(p, tol=0.5, n=500):
         else: hi = m
     return m, compute_mission(pp)
 
+
 def sensitivity(p, Wto):
     """
     Raymer Eq. 2.22–2.51 partial derivatives ∂W_TO/∂X.
@@ -288,16 +282,16 @@ def sensitivity(p, Wto):
     Mff = RR['Mff']; Rc = RR['Rc']; Vm = RR['Vm']
     Wpl = RR['Wpl']; Wcrew = RR['Wcrew']
 
-    C  = 1.0 - (1.0 + p['Mr']) * (1.0 - Mff) - p['Mtfo']   # Eq. 2.22
-    D  = Wpl + Wcrew                                          # Eq. 2.23
+    C  = 1.0 - (1.0 + p['Mr']) * (1.0 - Mff) - p['Mtfo']
+    D  = Wpl + Wcrew
     dn = C * Wto * (1.0 - p['B']) - D
-    F  = (-p['B'] * Wto**2 * (1.0 + p['Mr']) * Mff) / dn if abs(dn) > 1e-6 else 0.0  # Eq. 2.44
+    F  = (-p['B'] * Wto**2 * (1.0 + p['Mr']) * Mff) / dn if abs(dn) > 1e-6 else 0.0
 
     return dict(C=C, D=D, F=F,
-        dCpR  =  F * Rc                          / (375.0 * p['npc']               * p['LDc']),  # Eq 2.49
-        dnpR  = -F * Rc  * p['Cpc']              / (375.0 * p['npc']**2            * p['LDc']),  # Eq 2.50
-        dLDR  = -F * Rc  * p['Cpc']              / (375.0 * p['npc']               * p['LDc']**2),# Eq 2.51
-        dR    =  F        * p['Cpc']              / (375.0 * p['npc']               * p['LDc']),  # Eq 2.45
+        dCpR  =  F * Rc                          / (375.0 * p['npc']               * p['LDc']),
+        dnpR  = -F * Rc  * p['Cpc']              / (375.0 * p['npc']**2            * p['LDc']),
+        dLDR  = -F * Rc  * p['Cpc']              / (375.0 * p['npc']               * p['LDc']**2),
+        dR    =  F        * p['Cpc']              / (375.0 * p['npc']               * p['LDc']),
         dCpE  =  F * p['El'] * Vm                / (375.0 * p['npl']               * p['LDl']),
         dnpE  = -F * p['El'] * Vm * p['Cpl']     / (375.0 * p['npl']**2            * p['LDl']),
         dLDE  = -F * p['El'] * Vm * p['Cpl']     / (375.0 * p['npl']               * p['LDl']**2),
@@ -410,13 +404,11 @@ st.markdown(f"""
   </div>
 </div>""", unsafe_allow_html=True)
 
-# Status bar
 if conv:
     st.markdown(f'<div class="status-ok">✓ &nbsp;W_TO = {Wto:,.1f} lbs &nbsp;·&nbsp; Mff = {RR["Mff"]:.6f} &nbsp;·&nbsp; W_E_tent = {WE:,.1f} lbs &nbsp;·&nbsp; W_E_allow = {RR["WEa"]:,.1f} lbs &nbsp;·&nbsp; ΔW_E = {RR["diff"]:+.2f} lbs</div>', unsafe_allow_html=True)
 else:
     st.markdown(f'<div class="status-err">⚠ &nbsp;Not converged — ΔW_E = {RR["diff"]:+.0f} lbs. Adjust A, B regression constants or check inputs.</div>', unsafe_allow_html=True)
 
-# KPI row
 st.markdown(f"""
 <div class="kpi-grid">
   <div class="kpi-card primary"><div class="kpi-val primary">{Wto:,.0f}<span class="kpi-unit">lbs</span></div><div class="kpi-lbl">W_TO Gross</div></div>
@@ -443,7 +435,6 @@ with tab1:
     cL, cR = st.columns([3, 2], gap="medium")
 
     with cL:
-        # Step 1
         pax_wt  = int(npax) * (int(wpax) + int(wbag))
         crew_wt = int(ncrew) * 205
         att_wt  = int(natt)  * 200
@@ -471,7 +462,6 @@ with tab1:
           </div>
         </div>""", unsafe_allow_html=True)
 
-        # Step 2
         st.markdown(f"""
         <div class="card card-blue">
           <div class="card-title">Step 2 — Unit Conversions (Raymer uses statute miles & mph)</div>
@@ -492,13 +482,12 @@ with tab1:
           </div>
         </div>""", unsafe_allow_html=True)
 
-        # Step 3
         st.markdown('<div class="card card-blue"><div class="card-title">Step 3 — Mission Phase Weight Fractions (Raymer Table 2.1 + Breguet)</div>', unsafe_allow_html=True)
         st.markdown("""<div class="ph-hdr"><span>Phase</span><span>Wᵢ/Wᵢ₋₁</span><span>Type</span><span>Source</span><span>Cumulative Mff</span></div>""", unsafe_allow_html=True)
         cum = 1.0
         for ph, (fv, ft, fs) in RR['phases'].items():
             cum *= fv
-            fc = 'ph-frac-breguet' if ft == 'Breguet' else 'ph-frac-fixed'
+            fc  = 'ph-frac-breguet' if ft == 'Breguet' else 'ph-frac-fixed'
             bc2 = 'ph-badge-breguet' if ft == 'Breguet' else 'ph-badge-fixed'
             st.markdown(
                 f'<div class="ph-row"><span class="ph-name">{ph}</span>'
@@ -513,7 +502,6 @@ with tab1:
             f'<span style="font-size:.67rem;color:#6e7681;margin-left:.4rem">product of all 8 phase fractions</span>'
             f'</div></div>', unsafe_allow_html=True)
 
-        # Steps 4–6
         ok = "rpill-green" if conv else "rpill-red"
         st.markdown(f"""
         <div class="card {'card-green' if conv else 'card-red'}">
@@ -530,7 +518,6 @@ with tab1:
         </div>""", unsafe_allow_html=True)
 
     with cR:
-        # Equations reference
         st.markdown("""
         <div class="card card-gold">
           <div class="card-title">Key Equations — Raymer Ch.2</div>
@@ -549,7 +536,6 @@ with tab1:
           </div>
         </div>""", unsafe_allow_html=True)
 
-        # Summary weight table
         df_sum = pd.DataFrame({
             'Symbol':  ['W_TO','Mff','W_F','W_F_used','W_tfo','W_OE','W_E_tent','W_E_allow','ΔW_E','W_PL','W_crew'],
             'Value':   [f"{Wto:,.1f}", f"{RR['Mff']:.6f}", f"{WF:,.1f}", f"{RR['WFu']:,.1f}",
@@ -563,7 +549,6 @@ with tab1:
                 'Unit':   st.column_config.TextColumn('Unit',   width='small'),
             })
 
-        # Weight ratios
         ratio_rows = []
         for nm, vr, lo_r, hi_r in [
             ('W_PL / W_TO', Wpl/Wto, 0.10, 0.25),
@@ -640,7 +625,7 @@ with tab2:
         st.markdown('</div>', unsafe_allow_html=True)
 
     with s2:
-        # Range trade chart — dynamic
+        # Range trade chart
         r_lo = max(100, int(R_nm) - 500)
         r_hi = min(6000, int(R_nm) + 500)
         ranges = list(range(r_lo, r_hi + 1, 40))
@@ -649,13 +634,15 @@ with tab2:
             try:
                 w2, _ = solve_Wto({**P, 'R': float(r)})
                 wto_vals.append(w2)
-            except:
+            except Exception:
                 wto_vals.append(None)
 
+        # ── FIX: define AX_BASE without tickfont to avoid duplicate key error ──
         DARK = dict(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(11,15,22,.7)',
                     font=dict(family='JetBrains Mono', color='#8b949e', size=9),
                     margin=dict(l=8, r=8, t=42, b=8))
-        AX = dict(gridcolor='rgba(255,255,255,.04)', linecolor='rgba(255,255,255,.09)', tickfont=dict(size=9))
+        AX_BASE = dict(gridcolor='rgba(255,255,255,.04)', linecolor='rgba(255,255,255,.09)')
+        AX_SM   = dict(**AX_BASE, tickfont=dict(size=9))
 
         fig_r = go.Figure()
         fig_r.add_trace(go.Scatter(x=ranges, y=wto_vals,
@@ -666,11 +653,11 @@ with tab2:
             annotation_font=dict(color='#3fb950', size=10, family='JetBrains Mono'))
         fig_r.update_layout(**DARK, height=260,
             title=dict(text='W_TO vs Design Range', font=dict(color='#c8a86c', size=12, family='DM Serif Display')),
-            xaxis=dict(**AX, title='Range (nm)'), yaxis=dict(**AX, title='W_TO (lbs)'),
+            xaxis=dict(**AX_SM, title='Range (nm)'),
+            yaxis=dict(**AX_SM, title='W_TO (lbs)'),
             showlegend=False)
         st.plotly_chart(fig_r, use_container_width=True)
 
-        # Range table
         st.markdown(f"""<div class="card card-amber">
           <div class="card-title">Range Trade · ∂W_TO/∂R = {S['dR']:+.2f} lbs/nm</div>""",
           unsafe_allow_html=True)
@@ -689,11 +676,13 @@ with tab2:
 # TAB 3 — Charts
 # ───────────────────────────────────────────────────────
 with tab3:
-    DARK = dict(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(11,15,22,.7)',
+    # ── FIX: separate DARK and AX definitions with no tickfont conflict ──
+    DARK3 = dict(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(11,15,22,.7)',
                 font=dict(family='JetBrains Mono', color='#8b949e', size=9),
                 margin=dict(l=8, r=8, t=44, b=8))
-    AX   = dict(gridcolor='rgba(255,255,255,.04)', linecolor='rgba(255,255,255,.09)', tickfont=dict(size=9))
-    TITLE = lambda t: dict(text=t, font=dict(color='#c8a86c', size=12, family='DM Serif Display'))
+    AX3      = dict(gridcolor='rgba(255,255,255,.04)', linecolor='rgba(255,255,255,.09)', tickfont=dict(size=9))
+    AX3_SM8  = dict(gridcolor='rgba(255,255,255,.04)', linecolor='rgba(255,255,255,.09)', tickfont=dict(size=8))
+    TITLE3   = lambda t: dict(text=t, font=dict(color='#c8a86c', size=12, family='DM Serif Display'))
 
     # ── Chart 1: Phase fractions + cumulative Mff ──
     st.markdown('<div class="sec-div">Chart 1 — Mission Phase Weight Fractions: How fuel is consumed each phase</div>', unsafe_allow_html=True)
@@ -714,8 +703,9 @@ with tab3:
         mode='lines+markers', line=dict(color='#c8a86c', width=2.5),
         marker=dict(color='#e4c88a', size=7, line=dict(color='#c8a86c', width=1.5)),
         fill='tozeroy', fillcolor='rgba(200,168,108,.06)'), row=1, col=2)
-    fig1.update_layout(**DARK, height=340, showlegend=False)
-    fig1.update_xaxes(**AX); fig1.update_yaxes(**AX)
+    fig1.update_layout(**DARK3, height=340, showlegend=False)
+    fig1.update_xaxes(**AX3)
+    fig1.update_yaxes(**AX3)
     fig1.update_annotations(font=dict(color='#c8a86c', size=10))
     st.plotly_chart(fig1, use_container_width=True)
     st.markdown(
@@ -732,7 +722,7 @@ with tab3:
         try:
             rr2 = compute_mission({**P, 'Wto': float(w)})
             we_tent.append(rr2['WE']); we_allow.append(rr2['WEa'])
-        except:
+        except Exception:
             we_tent.append(None); we_allow.append(None)
 
     fig2 = go.Figure()
@@ -747,8 +737,9 @@ with tab3:
         font=dict(color='#3fb950', size=9, family='JetBrains Mono'),
         showarrow=True, arrowcolor='rgba(63,185,80,.5)', ax=40, ay=-40,
         bgcolor='rgba(7,9,13,.8)', bordercolor='rgba(63,185,80,.3)', borderwidth=1)
-    fig2.update_layout(**DARK, height=310, title=TITLE('Sizing Loop Convergence'),
-        xaxis=dict(**AX, title='W_TO (lbs)'), yaxis=dict(**AX, title='W_E (lbs)'),
+    fig2.update_layout(**DARK3, height=310, title=TITLE3('Sizing Loop Convergence'),
+        xaxis=dict(**AX3, title='W_TO (lbs)'),
+        yaxis=dict(**AX3, title='W_E (lbs)'),
         legend=dict(font=dict(size=9, color='#8b949e'), bgcolor='rgba(0,0,0,0)',
                     x=0.02, y=0.98))
     st.plotly_chart(fig2, use_container_width=True)
@@ -773,12 +764,12 @@ with tab3:
             xref='paper', yref='paper', x=0.5, y=0.5,
             font=dict(size=10, color='#c8a86c', family='JetBrains Mono'),
             showarrow=False, align='center')
-        fig3.update_layout(**DARK, title=TITLE('Weight Composition'), height=300,
+        fig3.update_layout(**DARK3, title=TITLE3('Weight Composition'), height=300,
             legend=dict(font=dict(size=8), bgcolor='rgba(0,0,0,0)'))
         st.plotly_chart(fig3, use_container_width=True)
 
     with c2:
-        # Sensitivity tornado
+        # ── FIX: Sensitivity tornado — use AX3_SM8 (size=8 tickfont) separately ──
         sp = [
             ('∂W_TO/∂Cp cruise',  S['dCpR']),
             ('∂W_TO/∂η_p cruise', S['dnpR']),
@@ -796,9 +787,9 @@ with tab3:
             text=[f'{v:+,.1f}' for v in sval],
             textposition='outside', textfont=dict(size=8, color='#8b949e')))
         fig4.add_vline(x=0, line=dict(color='rgba(255,255,255,.12)', width=1))
-        fig4.update_layout(**DARK, title=TITLE('Sensitivity Tornado'), height=300,
-            xaxis=dict(**AX, title='dW_TO (lbs/unit)'),
-            yaxis=dict(**AX, tickfont=dict(size=8)))
+        fig4.update_layout(**DARK3, title=TITLE3('Sensitivity Tornado'), height=300,
+            xaxis=dict(**AX3_SM8, title='dW_TO (lbs/unit)'),
+            yaxis=dict(**AX3_SM8))   # ← FIX: no duplicate tickfont
         st.plotly_chart(fig4, use_container_width=True)
 
 # ───────────────────────────────────────────────────────
@@ -841,7 +832,6 @@ with tab4:
                 topMargin=2.2*cm,  bottomMargin=2.2*cm)
             PW = 17.0*cm
 
-            # Palette — dark professional
             C_DARK  = colors.HexColor('#0D1B2A')
             C_GOLD  = colors.HexColor('#c8a86c')
             C_BLUE  = colors.HexColor('#4875c2')
@@ -892,7 +882,7 @@ with tab4:
 
             story = []
 
-            # ── Cover block ──
+            # Cover block
             hdr = Table([[
                 Paragraph('<font color="#c8a86c"><b>AEROSIZER PRO</b></font>',
                     ps('HDR', fontSize=18, fontName='Helvetica-Bold', textColor=C_GOLD, leading=22)),
@@ -911,7 +901,6 @@ with tab4:
             story.append(hdr)
             story.append(HRFlowable(width=PW, thickness=2, color=C_GOLD, spaceBefore=0, spaceAfter=6))
 
-            # Convergence badge
             sc = C_GREEN if conv else C_RED
             cv_row = Table([[Paragraph(
                 f'{"✓  CONVERGED" if conv else "⚠  NOT CONVERGED"}  —  '
@@ -929,7 +918,6 @@ with tab4:
             story.append(cv_row)
             story.append(Spacer(1, 0.35*cm))
 
-            # ── Section 1: Inputs ──
             story.append(Paragraph('1  Mission Inputs', sH1))
             t_in = dark_table([
                 ['Parameter','Value','Parameter','Value'],
@@ -946,7 +934,6 @@ with tab4:
             story.append(t_in)
             story.append(Spacer(1, 0.35*cm))
 
-            # ── Section 2: Equations ──
             story.append(Paragraph('2  Key Equations  (Raymer 2018, Chapter 2)', sH1))
             story.append(Paragraph('Cruise fraction — Breguet range equation, Eq. 2.9:', sH2))
             story.append(Paragraph('W5/W4  =  1 / exp[ Rc / (375 * (eta_p/Cp) * (L/D)) ]', sEQ))
@@ -959,7 +946,6 @@ with tab4:
                 sBODY))
             story.append(Spacer(1, 0.35*cm))
 
-            # ── Section 3: Phase fractions ──
             story.append(Paragraph('3  Mission Phase Weight Fractions', sH1))
             ph_data = [['Phase', 'Wᵢ/Wᵢ₋₁', 'Type', 'Source', 'Cum. Mff']]
             cm3 = 1.0
@@ -970,7 +956,6 @@ with tab4:
             story.append(dark_table(ph_data, [PW*0.22,PW*0.13,PW*0.13,PW*0.13,PW*0.15]))
             story.append(Spacer(1, 0.35*cm))
 
-            # ── Section 4: Results ──
             story.append(Paragraph('4  Sizing Results', sH1))
             res_data = [['Quantity', 'Value (lbs)', 'Expression']]
             for nm, vl, ex in [
@@ -990,7 +975,6 @@ with tab4:
             story.append(dark_table(res_data, [PW*0.32, PW*0.2, PW*0.48]))
             story.append(Spacer(1, 0.35*cm))
 
-            # ── Section 5: Weight ratios ──
             story.append(Paragraph('5  Weight Ratios — Sanity Check', sH1))
             rat_data = [['Ratio', 'Computed', 'Typical Range', 'Status']]
             for nm, vr, lo_r, hi_r in [
@@ -1004,7 +988,6 @@ with tab4:
             story.append(dark_table(rat_data, [PW*0.28,PW*0.17,PW*0.27,PW*0.18]))
             story.append(Spacer(1, 0.35*cm))
 
-            # ── Section 6: Sensitivity ──
             story.append(Paragraph('6  Sensitivity Analysis (Raymer Eq. 2.44–2.51)', sH1))
             sen_data = [['Partial Derivative', 'Value', 'Units', 'Eq.']]
             for partial, val, unit, eq in [
@@ -1019,7 +1002,6 @@ with tab4:
             story.append(dark_table(sen_data, [PW*0.38,PW*0.16,PW*0.28,PW*0.14]))
             story.append(Spacer(1, 0.45*cm))
 
-            # Footer
             story.append(HRFlowable(width=PW, thickness=0.5, color=C_GOLD, spaceBefore=3, spaceAfter=4))
             story.append(Paragraph(
                 f'AeroSizer Pro  ·  Raymer (2018) Aircraft Design: A Conceptual Approach  ·  '
@@ -1028,7 +1010,6 @@ with tab4:
 
             doc.build(story); buf.seek(0); return buf.read()
 
-        # PDF info card
         st.markdown(f"""
         <div class="card card-gold">
           <div class="card-title">PDF Report Contents</div>
