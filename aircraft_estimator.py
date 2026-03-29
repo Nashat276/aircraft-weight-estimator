@@ -161,18 +161,34 @@ html,body,[class*="css"]{background:var(--bg)!important;color:var(--text)!import
 .mh-title{font-family:'DM Serif Display',serif;font-size:1.35rem;color:var(--white);letter-spacing:-.03em;line-height:1;position:relative;z-index:1;}
 .mh-title span{background:linear-gradient(135deg,var(--gold),var(--gold2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
 
-/* ── DATAFRAME ── */
-[data-testid="stDataFrame"]{border:1px solid var(--border)!important;border-radius:10px!important;overflow:hidden!important;}
-[data-testid="stDataFrame"] *{background-color:transparent!important;}
-[data-testid="stDataFrame"] table{border-collapse:collapse!important;width:100%!important;}
-[data-testid="stDataFrame"] thead tr th{background:var(--pan2)!important;color:var(--gold)!important;font-family:'JetBrains Mono',monospace!important;font-size:.66rem!important;font-weight:700!important;letter-spacing:.1em!important;text-transform:uppercase!important;border-bottom:1.5px solid rgba(200,168,108,.28)!important;padding:.48rem .75rem!important;}
-[data-testid="stDataFrame"] tbody td{font-family:'JetBrains Mono',monospace!important;font-size:.77rem!important;color:var(--text)!important;border-color:var(--border2)!important;padding:.38rem .75rem!important;line-height:1.4!important;}
-[data-testid="stDataFrame"] tbody tr:nth-child(odd) td{background:rgba(255,255,255,.012)!important;}
-[data-testid="stDataFrame"] tbody tr:nth-child(even) td{background:rgba(255,255,255,.024)!important;}
-[data-testid="stDataFrame"] tbody tr:hover td{background:rgba(200,168,108,.06)!important;color:var(--white)!important;}
-[data-testid="stDataFrame"] tbody td:first-child{color:var(--text2)!important;font-size:.72rem!important;}
-[data-testid="stDataFrame"] ::-webkit-scrollbar{height:3px!important;}
-[data-testid="stDataFrame"] ::-webkit-scrollbar-thumb{background:rgba(200,168,108,.22)!important;}
+/* ── DATAFRAME — force dark on canvas-based glide editor ── */
+[data-testid="stDataFrame"]{border:1px solid rgba(200,168,108,.22)!important;border-radius:10px!important;overflow:hidden!important;background:var(--sur)!important;}
+[data-testid="stDataFrame"]>div{background:var(--sur)!important;}
+[data-testid="stDataFrame"] *{background-color:var(--sur)!important;color:var(--text)!important;}
+[data-testid="stDataFrame"] canvas{filter:invert(0)!important;}
+/* Kill every possible white injection */
+[data-testid="stDataFrame"] [style*="background"]{background:#0c0f16!important;}
+[data-testid="stDataFrame"] [style*="color: rgb(49"]{color:#b0bcce!important;}
+[data-testid="stDataFrame"] [style*="color: white"]{color:#b0bcce!important;}
+[data-testid="stDataFrame"] ::-webkit-scrollbar{height:3px!important;width:3px!important;}
+[data-testid="stDataFrame"] ::-webkit-scrollbar-thumb{background:rgba(200,168,108,.3)!important;}
+
+/* ── CUSTOM HTML TABLE (used instead of st.dataframe) ── */
+.dark-table{width:100%;border-collapse:collapse;font-family:'JetBrains Mono',monospace;font-size:.76rem;border:1px solid rgba(200,168,108,.22);border-radius:10px;overflow:hidden;}
+.dark-table thead tr{background:linear-gradient(135deg,#0d1520,#111e2e);}
+.dark-table thead th{padding:.52rem .85rem;text-align:left;font-size:.6rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);border-bottom:1.5px solid rgba(200,168,108,.3);white-space:nowrap;}
+.dark-table tbody tr{border-bottom:1px solid rgba(255,255,255,.04);transition:background .15s;}
+.dark-table tbody tr:nth-child(odd){background:#0d1520;}
+.dark-table tbody tr:nth-child(even){background:#111e2e;}
+.dark-table tbody tr:hover{background:rgba(200,168,108,.07);}
+.dark-table tbody tr:last-child{border-bottom:none;}
+.dark-table tbody td{padding:.42rem .85rem;color:var(--text);vertical-align:middle;line-height:1.5;}
+.dark-table tbody td:first-child{color:var(--gold);font-weight:600;font-size:.72rem;}
+.dark-table tbody td.val{color:var(--white);font-weight:700;}
+.dark-table tbody td.unit{color:var(--text3);font-size:.68rem;}
+.dark-table tbody td.check-ok{color:var(--green);font-weight:700;}
+.dark-table tbody td.check-warn{color:var(--amber);font-weight:700;}
+.dark-table-wrap{border:1px solid rgba(200,168,108,.18);border-radius:10px;overflow:hidden;margin-bottom:.7rem;}
 
 /* ── DOWNLOAD ── */
 div.stDownloadButton>button{background:var(--pan)!important;color:var(--gold)!important;border:1px solid rgba(200,168,108,.22)!important;border-radius:8px!important;font-size:.79rem!important;font-weight:600!important;padding:.52rem 1rem!important;width:100%!important;transition:all .2s!important;}
@@ -536,36 +552,41 @@ with tab1:
           </div>
         </div>""", unsafe_allow_html=True)
 
-        df_sum = pd.DataFrame({
-            'Symbol':  ['W_TO','Mff','W_F','W_F_used','W_tfo','W_OE','W_E_tent','W_E_allow','ΔW_E','W_PL','W_crew'],
-            'Value':   [f"{Wto:,.1f}", f"{RR['Mff']:.6f}", f"{WF:,.1f}", f"{RR['WFu']:,.1f}",
-                        f"{Wtfo_r:,.2f}", f"{WOE:,.1f}", f"{WE:,.2f}", f"{RR['WEa']:,.2f}",
-                        f"{RR['diff']:+.2f}", f"{Wpl:,.1f}", f"{Wcrew:,.1f}"],
-            'Unit':    ['lbs','—','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs','lbs']})
-        st.dataframe(df_sum, hide_index=True, use_container_width=True, height=405,
-            column_config={
-                'Symbol': st.column_config.TextColumn('Symbol', width='small'),
-                'Value':  st.column_config.TextColumn('Value',  width='medium'),
-                'Unit':   st.column_config.TextColumn('Unit',   width='small'),
-            })
+        # ── Summary weight table — pure HTML (dark theme, no white) ──
+        sum_rows = [
+            ('W_TO',      f"{Wto:,.1f}",          'lbs'),
+            ('Mff',       f"{RR['Mff']:.6f}",      '—'),
+            ('W_F',       f"{WF:,.1f}",            'lbs'),
+            ('W_F_used',  f"{RR['WFu']:,.1f}",     'lbs'),
+            ('W_tfo',     f"{Wtfo_r:,.2f}",        'lbs'),
+            ('W_OE',      f"{WOE:,.1f}",           'lbs'),
+            ('W_E_tent',  f"{WE:,.2f}",            'lbs'),
+            ('W_E_allow', f"{RR['WEa']:,.2f}",     'lbs'),
+            ('ΔW_E',      f"{RR['diff']:+.2f}",    'lbs'),
+            ('W_PL',      f"{Wpl:,.1f}",           'lbs'),
+            ('W_crew',    f"{Wcrew:,.1f}",         'lbs'),
+        ]
+        tbl_html = '<div class="dark-table-wrap"><table class="dark-table"><thead><tr><th>Symbol</th><th>Value</th><th>Unit</th></tr></thead><tbody>'
+        for sym, val, unit in sum_rows:
+            tbl_html += f'<tr><td>{sym}</td><td class="val">{val}</td><td class="unit">{unit}</td></tr>'
+        tbl_html += '</tbody></table></div>'
+        st.markdown(tbl_html, unsafe_allow_html=True)
 
-        ratio_rows = []
+        # ── Weight ratios table — pure HTML (dark theme) ──
+        ratio_html = '<div class="dark-table-wrap"><table class="dark-table"><thead><tr><th>Ratio</th><th>Value</th><th>Typical</th><th>✓</th></tr></thead><tbody>'
         for nm, vr, lo_r, hi_r in [
             ('W_PL / W_TO', Wpl/Wto, 0.10, 0.25),
             ('W_F  / W_TO', WF/Wto,  0.20, 0.45),
             ('W_E  / W_TO', WE/Wto,  0.45, 0.65),
             ('W_PL / W_E',  Wpl/WE,  0.15, 0.40)]:
             ok_r = lo_r <= vr <= hi_r
-            ratio_rows.append({'Ratio': nm, 'Value': f'{vr:.4f}',
-                'Range': f'{lo_r:.2f}–{hi_r:.2f}',
-                'Check': '✓' if ok_r else ('▲' if vr > hi_r else '▼')})
-        st.dataframe(pd.DataFrame(ratio_rows), hide_index=True, use_container_width=True,
-            column_config={
-                'Ratio': st.column_config.TextColumn('Ratio', width='small'),
-                'Value': st.column_config.TextColumn('Value', width='small'),
-                'Range': st.column_config.TextColumn('Typical', width='small'),
-                'Check': st.column_config.TextColumn('✓', width='small'),
-            })
+            chk  = '✓' if ok_r else ('▲' if vr > hi_r else '▼')
+            chk_cls = 'check-ok' if ok_r else 'check-warn'
+            ratio_html += (f'<tr><td>{nm}</td><td class="val">{vr:.4f}</td>'
+                           f'<td class="unit">{lo_r:.2f}–{hi_r:.2f}</td>'
+                           f'<td class="{chk_cls}">{chk}</td></tr>')
+        ratio_html += '</tbody></table></div>'
+        st.markdown(ratio_html, unsafe_allow_html=True)
 
 # ───────────────────────────────────────────────────────
 # TAB 2 — Sensitivity
@@ -800,23 +821,35 @@ with tab4:
 
     with e1:
         st.markdown('<div class="sec-div">Full Results — CSV</div>', unsafe_allow_html=True)
+        exp_rows = [
+            ('W_TO',       round(Wto,2),           'lbs'),
+            ('Mff',        round(RR['Mff'],6),      '—'),
+            ('W_F',        round(WF,2),             'lbs'),
+            ('W_F_usable', round(RR['WFu'],2),      'lbs'),
+            ('W_tfo',      round(Wtfo_r,3),         'lbs'),
+            ('W_OE',       round(WOE,2),            'lbs'),
+            ('W_E_tent',   round(WE,2),             'lbs'),
+            ('W_E_allow',  round(RR['WEa'],2),      'lbs'),
+            ('delta_WE',   round(RR['diff'],3),     'lbs'),
+            ('W_PL',       round(Wpl,2),            'lbs'),
+            ('W_crew',     round(Wcrew,2),          'lbs'),
+            ('Rc_sm',      round(RR['Rc'],3),       's.mi'),
+            ('Vm_mph',     round(RR['Vm'],3),       'mph'),
+            ('F',          round(S['F'],2),         '—'),
+            ('C',          round(S['C'],6),         '—'),
+            ('D',          round(S['D'],2),         'lbs'),
+        ]
+        exp_html = '<div class="dark-table-wrap"><table class="dark-table"><thead><tr><th>Parameter</th><th>Value</th><th>Units</th></tr></thead><tbody>'
+        for param, val, unit in exp_rows:
+            exp_html += f'<tr><td>{param}</td><td class="val">{val}</td><td class="unit">{unit}</td></tr>'
+        exp_html += '</tbody></table></div>'
+        st.markdown(exp_html, unsafe_allow_html=True)
+
+        # keep CSV export working from the same data
         df_exp = pd.DataFrame({
-            'Parameter': ['W_TO','Mff','W_F','W_F_usable','W_tfo','W_OE',
-                          'W_E_tent','W_E_allow','delta_WE','W_PL','W_crew',
-                          'Rc_sm','Vm_mph','F','C','D'],
-            'Value':     [round(Wto,2), round(RR['Mff'],6), round(WF,2),
-                          round(RR['WFu'],2), round(Wtfo_r,3), round(WOE,2),
-                          round(WE,2), round(RR['WEa'],2), round(RR['diff'],3),
-                          round(Wpl,2), round(Wcrew,2), round(RR['Rc'],3),
-                          round(RR['Vm'],3), round(S['F'],2), round(S['C'],6), round(S['D'],2)],
-            'Units':     ['lbs','—','lbs','lbs','lbs','lbs','lbs','lbs','lbs',
-                          'lbs','lbs','s.mi','mph','—','—','lbs']})
-        st.dataframe(df_exp, hide_index=True, use_container_width=True, height=540,
-            column_config={
-                'Parameter': st.column_config.TextColumn('Parameter', width='medium'),
-                'Value':     st.column_config.TextColumn('Value',     width='medium'),
-                'Units':     st.column_config.TextColumn('Units',     width='small'),
-            })
+            'Parameter': [r[0] for r in exp_rows],
+            'Value':     [r[1] for r in exp_rows],
+            'Units':     [r[2] for r in exp_rows]})
         b = io.StringIO(); df_exp.to_csv(b, index=False)
         st.download_button("⬇  Download CSV", b.getvalue(),
                            "aerosizer_results.csv", "text/csv",
